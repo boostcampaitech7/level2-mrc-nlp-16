@@ -178,6 +178,7 @@ class ReaderModel(pl.LightningModule):
         self.mod = get_peft_model(model, peft_config)
 
         self.criterion = nn.CrossEntropyLoss()
+        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
 
     def forward(self, input_ids, attention_mask):
         """
@@ -266,38 +267,23 @@ class ReaderModel(pl.LightningModule):
         Returns:
             list: 각 질문에 대한 예측된 답변 리스트.
         """
-        try:
-            input_ids = batch["input_ids"]
-            attention_mask = batch["attention_mask"]
-
-            # Start와 End 위치 예측
-            start_logits, end_logits = self(input_ids, attention_mask)
-
-            # Start와 End 위치의 인덱스 찾기
-            start_index = start_logits.argmax(dim=1)
-            end_index = end_logits.argmax(dim=1)
-
-            # 각 샘플에 대한 답변 추출
-            best_answers = []
-            for i in range(input_ids.size(0)):
-                answer_start = start_index[i]
-                answer_end = end_index[i]
-
-                # 유효한 답변인지 확인
-                if answer_start <= answer_end and answer_end - answer_start < 100:
-                    # 답변 토큰 디코딩
-                    answer_text = self.tokenizer.decode(
-                        input_ids[i][answer_start : answer_end + 1], skip_special_tokens=True
-                    )
-                    best_answers.append(answer_text)
-                else:
-                    best_answers.append("")
-
-            return best_answers
-        except KeyError as e:
-            raise KeyError(f"배치 데이터에 필요한 키가 누락되었습니다: {e}")
-        except Exception as e:
-            raise RuntimeError(f"예측 중 오류가 발생했습니다: {e}")
+        max_prob = 0
+        answer = ""
+        for doc_id in range(len(batch)):
+            for chunk_idx in range(len(batch[doc_id])):
+                input_ids = batch[doc_id][chunk_idx]["input_ids"]
+                attention_mask = batch[doc_id][chunk_idx]["attention_mask"]
+                start_logits, end_logits = self(input_ids, attention_mask)
+                start_logit, end_logit = start_logits.max(), end_logits.max()
+                answer_start = start_logits.argmax()
+                answer_end = end_logits.argmax()
+                if (
+                    start_logit*end_logit > max_prob
+                    and answer_start != 0
+                    and answer_end != 0
+                ):
+                    answer = self.tokenizer.decode(input_ids[0, answer_start:answer_end+1])
+        return answer
 
     def configure_optimizers(self):
         """
