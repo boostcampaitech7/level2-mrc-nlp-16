@@ -140,6 +140,7 @@ class ReaderDataLoader(pl.LightningDataModule):
         val_data=None,
         test_data=None,
         predict_data=None,
+        selected_contexts=None,
         truncation=True,
         batch_size=8,
     ):
@@ -151,6 +152,7 @@ class ReaderDataLoader(pl.LightningDataModule):
         self.val_data = val_data
         self.test_data = test_data
         self.predict_data = predict_data
+        self.selected_contexts = selected_contexts
         self.truncation = truncation
         self.batch_size = batch_size
 
@@ -187,47 +189,21 @@ class ReaderDataLoader(pl.LightningDataModule):
         elif stage == "predict":
             self.predict_dataset = ReaderDataset(
                 question=self.predict_data["question"],
-                context=self.predict_data["context"],
+                context=self.selected_contexts,
                 tokenizer=self.tokenizer,
                 max_len=self.max_len,
                 stride=self.stride,
                 stage=stage,
             )
 
-    def collate_fn(self, batch):
-        input_ids = torch.cat([item["input_ids"] for item in batch])
-        attention_mask = torch.cat([item["attention_mask"] for item in batch])
-        token_type_ids = torch.cat([item["token_type_ids"] for item in batch])
-        start_tokens = torch.cat([item["start_tokens"] for item in batch])
-        end_tokens = torch.cat([item["end_tokens"] for item in batch])
-
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_type_ids": token_type_ids,
-            "start_tokens": start_tokens,
-            "end_tokens": end_tokens,
-        }
-
-    def collate_fn_predict(self, batch):
-        input_ids = torch.cat([item["input_ids"] for item in batch])
-        attention_mask = torch.cat([item["attention_mask"] for item in batch])
-        token_type_ids = torch.cat([item["token_type_ids"] for item in batch])
-
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_type_ids": token_type_ids,
-        }
-
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, collate_fn=self.collate_fn)
-
+        return DataLoader(self.val_dataset, batch_size=self.batch_size)
+    
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, collate_fn=self.collate_fn)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size)
 
     def predict_dataloader(self):
-        return DataLoader(self.predict_dataset, batch_size=self.batch_size, collate_fn=self.collate_fn_predict)
+        return DataLoader(self.predict_dataset, batch_size=self.batch_size)

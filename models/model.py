@@ -178,7 +178,7 @@ class ReaderModel(pl.LightningModule):
         self.mod = get_peft_model(model, peft_config)
 
         self.criterion = nn.CrossEntropyLoss()
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
 
     def forward(self, input_ids, attention_mask):
         """
@@ -191,7 +191,7 @@ class ReaderModel(pl.LightningModule):
         Returns:
             Tuple[Tensor, Tensor]: Start logits과 End logits.
         """
-        output = self.mod(input_ids, attention_mask=attention_mask)
+        output = self.mod(input_ids=input_ids, attention_mask=attention_mask)
         return output.start_logits, output.end_logits
 
     def training_step(self, batch, batch_idx):
@@ -205,11 +205,18 @@ class ReaderModel(pl.LightningModule):
         Returns:
             Tensor: 손실 값.
         """
-        start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
-        loss = (
-            self.criterion(start_logits, batch["start_tokens"].long())
-            + self.criterion(end_logits, batch["end_tokens"].long())
-        ) / 2
+        input_ids = batch["input_ids"].transpose(0, 1)
+        attention_mask = batch["attention_mask"].transpose(0, 1)
+
+        start_logits, end_logits = [], []
+        for chunk_idx in range(batch["input_ids"].shape[1]):
+            start_logits_for_chunk, end_logits_for_chunk = self(input_ids[chunk_idx], attention_mask[chunk_idx])
+            start_logits.append(start_logits_for_chunk)
+            end_logits.append(end_logits_for_chunk)
+
+        loss_start = self.criterion(torch.cat(start_logits, dim=0), batch["start_tokens"].squeeze(0).long())
+        loss_end = self.criterion(torch.cat(end_logits, dim=0), batch["end_tokens"].squeeze(0).long())
+        loss = (loss_start+loss_end)/2
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         return loss
 
@@ -224,12 +231,29 @@ class ReaderModel(pl.LightningModule):
         Returns:
             Tensor: 손실 값.
         """
-        start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
-        loss = (
-            self.criterion(start_logits, batch["start_tokens"].long())
-            + self.criterion(end_logits, batch["end_tokens"].long())
-        ) / 2
-        self.log("validation_loss", loss, on_step=False, on_epoch=True)
+        input_ids = batch["input_ids"].transpose(0, 1)
+        attention_mask = batch["attention_mask"].transpose(0, 1)
+
+        start_logits, end_logits = [], []
+        match = 0
+        for chunk_idx in range(batch["input_ids"].shape[1]):
+            start_logits_for_chunk, end_logits_for_chunk = self(input_ids[chunk_idx], attention_mask[chunk_idx])
+            start_logits.append(start_logits_for_chunk)
+            end_logits.append(end_logits_for_chunk)
+
+            answer_start_real = int(batch["start_tokens"].squeeze(0)[chunk_idx].item())
+            answer_end_real = int(batch["end_tokens"].squeeze(0)[chunk_idx].item())
+
+            if not (answer_start_real == 0 and answer_end_real == 0):
+                answer_start = start_logits_for_chunk.argmax()
+                answer_end = end_logits_for_chunk.argmax()
+                match = int(answer_start_real == answer_start and answer_end_real == answer_end)
+
+        loss_start = self.criterion(torch.cat(start_logits, dim=0), batch["start_tokens"].squeeze(0).long())
+        loss_end = self.criterion(torch.cat(end_logits, dim=0), batch["end_tokens"].squeeze(0).long())
+        loss = (loss_start+loss_end)/2
+        self.log("validation_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("Exact Match", match, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def predict_step(self, batch, batch_idx):
@@ -243,38 +267,23 @@ class ReaderModel(pl.LightningModule):
         Returns:
             list: 각 질문에 대한 예측된 답변 리스트.
         """
-        try:
-            input_ids = batch["input_ids"]
-            attention_mask = batch["attention_mask"]
-
-            # Start와 End 위치 예측
-            start_logits, end_logits = self(input_ids, attention_mask)
-
-            # Start와 End 위치의 인덱스 찾기
-            start_index = start_logits.argmax(dim=1)
-            end_index = end_logits.argmax(dim=1)
-
-            # 각 샘플에 대한 답변 추출
-            best_answers = []
-            for i in range(input_ids.size(0)):
-                answer_start = start_index[i]
-                answer_end = end_index[i]
-
-                # 유효한 답변인지 확인
-                if answer_start <= answer_end and answer_end - answer_start < 100:
-                    # 답변 토큰 디코딩
-                    answer_text = self.tokenizer.decode(
-                        input_ids[i][answer_start : answer_end + 1], skip_special_tokens=True
-                    )
-                    best_answers.append(answer_text)
-                else:
-                    best_answers.append("")
-
-            return best_answers
-        except KeyError as e:
-            raise KeyError(f"배치 데이터에 필요한 키가 누락되었습니다: {e}")
-        except Exception as e:
-            raise RuntimeError(f"예측 중 오류가 발생했습니다: {e}")
+        max_prob = 0
+        answer = ""
+        for doc_id in range(len(batch)):
+            for chunk_idx in range(len(batch[doc_id])):
+                input_ids = batch[doc_id][chunk_idx]["input_ids"]
+                attention_mask = batch[doc_id][chunk_idx]["attention_mask"]
+                start_logits, end_logits = self(input_ids, attention_mask)
+                start_logit, end_logit = start_logits.max(), end_logits.max()
+                answer_start = start_logits.argmax()
+                answer_end = end_logits.argmax()
+                if (
+                    start_logit*end_logit > max_prob
+                    and answer_start != 0
+                    and answer_end != 0
+                ):
+                    answer = self.tokenizer.decode(input_ids[0, answer_start:answer_end+1])
+        return answer
 
     def configure_optimizers(self):
         """

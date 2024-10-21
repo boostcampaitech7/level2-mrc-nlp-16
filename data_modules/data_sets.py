@@ -147,48 +147,79 @@ class ReaderDataset(Dataset):
         self.max_len = max_len
         self.stride = stride
         self.stage = stage
-
+    
     def __len__(self):
         return len(self.question)
-
+    
     def __getitem__(self, idx):
-        question = self.question[idx]
-        context = self.context[idx]
-
-        res = {}
-        ## question tokenization
-        encoding = self.tokenizer(
-            question,
-            context,
-            max_length=self.max_len,
-            stride=self.stride,
-            padding="max_length",
-            truncation="only_second",
-            return_overflowing_tokens=True,
-            return_offsets_mapping=True,
-            return_tensors="pt",
-        )
-        res["input_ids"] = encoding["input_ids"]
-        res["attention_mask"] = encoding["attention_mask"]
-        res["token_type_ids"] = encoding["token_type_ids"]
-
-        if self.stage in ["fit", "test"]:
+        if self.stage == "fit":
+            question = self.question[idx]
+            context = self.context[idx]  ## from train or valid dataset
+            
             answer = self.answer[idx]
             answer_start = answer["answer_start"][0]
             answer_end = answer_start + len(answer["text"][0]) - 1
+            
+            encoding = self.tokenizer(
+                question,
+                context,
+                max_length=self.max_len,
+                stride=self.stride,
+                padding="max_length",
+                truncation="only_second",
+                return_overflowing_tokens=True,
+                return_offsets_mapping=True,
+                return_tensors="pt",
+            )
+            res = {}
+            res["input_ids"] = encoding["input_ids"]
+            res["attention_mask"] = encoding["attention_mask"]
 
-            ## answer one-hot encoding
-            start_tokens = torch.zeros_like(encoding["input_ids"])
-            end_tokens = torch.zeros_like(encoding["input_ids"])
+            res["start_tokens"] = torch.empty(encoding["input_ids"].shape[0])
+            res["end_tokens"] = torch.empty(encoding["input_ids"].shape[0])
             for chunk_idx, chunk in enumerate(encoding["offset_mapping"]):
-                for token_idx, (start, end) in enumerate(chunk):
-                    if encoding["token_type_ids"][chunk_idx, token_idx] == 0:
-                        continue
-                    if answer_start in range(start, end + 1):
-                        start_tokens[chunk_idx, token_idx] = 1
-                    if answer_end in range(start, end + 1):
-                        end_tokens[chunk_idx, token_idx] = 1
-            res["start_tokens"] = start_tokens
-            res["end_tokens"] = end_tokens
 
+                sequence_ids = encoding.sequence_ids(chunk_idx)
+                chunk_start_token = sequence_ids.index(1)
+                chunk_end_token = len(sequence_ids)-1-(sequence_ids[::-1].index(1))
+                if not (
+                    answer_start >= chunk[chunk_start_token][0]
+                    and answer_end <= chunk[chunk_end_token][1]
+                ):
+                    res["start_tokens"][chunk_idx] = 0
+                    res["end_tokens"][chunk_idx] = 0
+                else:
+                    for token_idx, (start, end) in enumerate(chunk):
+                        if encoding.sequence_ids(chunk_idx)[token_idx] != 1 :
+                            continue
+                        if answer_start in range(start, end+1):
+                            res["start_tokens"][chunk_idx] = token_idx
+                        if answer_end in range(start, end+1):
+                            res["end_tokens"][chunk_idx] = token_idx
+
+        elif self.stage == "predict":
+            question = self.question[idx]
+            contexts = self.context[idx]  ## selected contexts
+
+            res = {}
+            for doc_id, context in enumerate(contexts):
+                encoding = self.tokenizer(
+                    question,
+                    context,
+                    max_length=self.max_len,
+                    stride=self.stride,
+                    padding="max_length",
+                    truncation="only_second",
+                    return_overflowing_tokens=True,
+                    return_offsets_mapping=True,
+                    return_tensors="pt",
+                )
+                doc_res = {}
+                for chunk_idx, chunk in enumerate(encoding["input_ids"]):
+                    chunk_res = {}
+                    chunk_res["input_ids"] = chunk
+                    chunk_res["attention_mask"] = encoding["attention_mask"][chunk_idx]
+                    doc_res[chunk_idx] = chunk_res
+                res[doc_id] = doc_res
+        
         return res
