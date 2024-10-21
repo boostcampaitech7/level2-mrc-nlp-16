@@ -149,8 +149,6 @@ def main():
         stride=config["reader"]["context_stride"],
         train_data=train_dataset,
         val_data=valid_dataset,
-        # test_data=valid_dataset,
-        predict_data=valid_dataset,
         batch_size=config["reader"]["batch_size"],
     )
     reader_model = ReaderModel(config["reader"])
