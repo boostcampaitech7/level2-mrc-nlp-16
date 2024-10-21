@@ -68,42 +68,57 @@ def main():
     logger.info("Contexts loaded.")
 
     #################################################################################
-    # 리트리버 학습 초기화 (dense embedding)
-    retrieval_tokenizer = AutoTokenizer.from_pretrained(config["retrieval"]["model_name"])
-    retrieval_dataloader = RetrievalDataLoader(
-        tokenizer=retrieval_tokenizer,
-        q_max_length=config["retrieval"]["question_max_length"],
-        c_max_length=config["retrieval"]["context_max_length"],
-        stride=config["retrieval"]["context_stride"],
-        train_data=train_dataset,
-        val_data=valid_dataset,
-        # test_data=valid_dataset,
-        predict_data=valid_dataset,
-        contexts=contexts,
-        batch_size=config["retrieval"]["batch_size"],
-        negative_length=config["retrieval"]["negative_length"],
-    )
-    retrieval_model = RetrievalModel(config["retrieval"])
-    logger.info("Retrieval model and dataloader initialized.")
-
     # 리트리버 임베딩 학습
     if config["retrieval"]["TRAIN_RETRIEVAL"]:  # 학습 수행
+        # 리트리버 학습 초기화 (dense embedding)
+        retrieval_tokenizer = AutoTokenizer.from_pretrained(config["retrieval"]["model_name"])
+        retrieval_dataloader = RetrievalDataLoader(
+            tokenizer=retrieval_tokenizer,
+            q_max_length=config["retrieval"]["question_max_length"],
+            c_max_length=config["retrieval"]["context_max_length"],
+            stride=config["retrieval"]["context_stride"],
+            train_data=train_dataset,
+            val_data=valid_dataset,
+            # test_data=valid_dataset,
+            predict_data=valid_dataset,
+            contexts=contexts,
+            batch_size=config["retrieval"]["batch_size"],
+            negative_length=config["retrieval"]["negative_length"],
+        )
+        retrieval_model = RetrievalModel(config["retrieval"])
+        logger.info("Retrieval model and dataloader initialized.")
+
+        MODEL_NAME = config["retrieval"]["model_name"]
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=f"saved/{MODEL_NAME}/{wandb.run.id}",
+            filename="retrieval_{epoch:02d}",
+            save_top_k=1,
+            monitor="validation_similarity",
+            mode="max",
+        )
+        early_stop_callback = EarlyStopping(monitor="validation_loss", patience=4, mode="min")
+
         trainer = pl.Trainer(
             accelerator="gpu",
             max_epochs=config["retrieval"]["epoch"],
             logger=wandb_logger,
+            callbacks=[checkpoint_callback, early_stop_callback],
             val_check_interval=1.0,
         )
+
         logger.info("Starting Retrieval model training.")
         trainer.fit(retrieval_model, datamodule=retrieval_dataloader)
-        torch.save(retrieval_model.state_dict(), "best_retrieval_model.pth")
-        logger.info("Retrieval model training completed and saved.")
-    else:  # 학습된 모델을 불러옴
-        retrieval_model.load_state_dict(torch.load("best_retrieval_model.pth"))
-        assert os.path.isfile("best_retrieval_model.pth"), "No retrieval model file exists."
-        logger.info("Retrieval model loaded from saved state.")
 
-    retrieval_model.eval()
+        ## best model & configuration uploading
+        config_dict = dict(config["retrieval"])
+        with open("config_retrieval.json", "w") as f:
+            json.dump(config_dict, f)
+
+        artifact = wandb.Artifact(name=f"model-{wandb.run.id}", type="model")
+        artifact.add_file(checkpoint_callback.best_model_path)
+        artifact.add_file("config_retrieval.json")
+        wandb.log_artifact(artifact)
+        logger.info("Retrieval model training completed and saved.")
 
     ################################################################################
     # 학습된 retrieval으로 context의 임베딩을 생성,
@@ -157,10 +172,10 @@ def main():
         reader_model = ReaderModel(config["reader"])
         logger.info("Reader model and dataloader initialized.")
 
-        MODEL_NAME = config["model_name"]
+        MODEL_NAME = config["reader"]["model_name"]
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"saved/{MODEL_NAME}/{wandb.run.id}",
-            filename="{epoch:02d}",
+            filename="reader_{epoch:02d}",
             save_top_k=1,
             monitor="Exact Match",
             mode="max",
