@@ -110,3 +110,8 @@ datasets/
 .vscode/
 .idea/
 __MACOSX/
+
+# custom
+test.ipynb
+wandb/
+ODQA_project

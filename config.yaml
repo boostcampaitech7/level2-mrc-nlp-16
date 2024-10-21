@@ -1,0 +1,44 @@
+seed:
+  value: 123
+  DETERMINISTIC: True
+
+wandb:
+  project: "ODQA_project"
+  name: "retrieval_reader_training"
+
+data:
+  train_dataset_path: "./data/train_dataset/"
+  contexts_path: "./data/wikipedia_documents.json"
+  index_file_path: "./data/embedding/context_index.faiss"
+
+retrieval:
+  TRAIN_RETRIEVAL: True
+  model_name: "bert-base-multilingual-cased"
+  module_names: ["query", "key", "value"]
+  epoch: 2
+  batch_size: 2
+  lr: 0.00001
+  question_max_length: 128
+  context_max_length: 384
+  context_stride: 16
+  negative_length: 2
+  LoRA_r: 8
+  LoRA_alpha: 8
+  LoRA_drop_out: 0.005
+
+reader:
+  TRAIN_READER: True
+  model_name: "klue/bert-base"
+  module_names: ["query", "key", "value"]
+  epoch: 2
+  batch_size: 2
+  lr: 0.00001
+  max_length: 256
+  context_stride: 16
+  LoRA_r: 8
+  LoRA_alpha: 8
+  LoRA_drop_out: 0.005
+
+faiss:
+  nlist: 100 # 클러스터 개수
+  m: 8 # subquantizer 개수
