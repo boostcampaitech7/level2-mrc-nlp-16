@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import pickle
 import random
@@ -6,21 +7,15 @@ import warnings
 from pprint import pprint
 
 import faiss
-
-# import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
-
-# import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import yaml
 from datasets import load_from_disk
 from IPython.display import clear_output
-
-# from peft import Loraconfig["retrieval"], get_peft_model
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.feature_extraction.text import TfidfVectorizer
 from torch.utils.data import DataLoader, Dataset
@@ -35,33 +30,40 @@ from transformers import (
 )
 
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
-from data_modules.data_sets import ContextDataset
+from data_modules.data_sets import ContextDataset, ReaderDataset
 from models.metric import compute_exact, compute_f1
 from models.model import ReaderModel, RetrievalModel
 from utils import load_config, set_seed
 from utils.embedding import context_embedding
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 def main():
     # 하이퍼파라미터 로딩, config['seed']['value'] 형태로 사용
     config = load_config("./config.yaml")
+    logger.info("Configuration loaded.")
 
     # 시드 고정
-    set_seed(config["seed"]["value"], config["seed"]["deterministic"])
+    set_seed(config["seed"]["value"], config["seed"]["DETERMINISTIC"])
+    logger.info("Random seed set.")
 
     # wandb 로깅
     wandb_logger = WandbLogger(project=config["wandb"]["project"], name=config["wandb"]["name"])
+    logger.info("Wandb logger initialized.")
 
     # 데이터셋 로드
     dataset = load_from_disk(config["data"]["train_dataset_path"])
     train_dataset = dataset["train"]
     valid_dataset = dataset["validation"]
+    logger.info("Datasets loaded.")
 
     with open(config["data"]["contexts_path"], "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
-
-    # lr_scheduler 추가
+    logger.info("Contexts loaded.")
 
     #################################################################################
     # 리트리버 학습 초기화 (dense embedding)
@@ -73,11 +75,14 @@ def main():
         stride=config["retrieval"]["context_stride"],
         train_data=train_dataset,
         val_data=valid_dataset,
+        # test_data=valid_dataset,
         predict_data=valid_dataset,
         contexts=contexts,
         batch_size=config["retrieval"]["batch_size"],
+        negative_length=config["retrieval"]["negative_length"],
     )
     retrieval_model = RetrievalModel(config["retrieval"])
+    logger.info("Retrieval model and dataloader initialized.")
 
     # 리트리버 임베딩 학습
     if config["retrieval"]["TRAIN_RETRIEVAL"]:  # 학습 수행
@@ -87,11 +92,14 @@ def main():
             logger=wandb_logger,
             val_check_interval=1.0,
         )
+        logger.info("Starting Retrieval model training.")
         trainer.fit(retrieval_model, datamodule=retrieval_dataloader)
         torch.save(retrieval_model.state_dict(), "best_retrieval_model.pth")
+        logger.info("Retrieval model training completed and saved.")
     else:  # 학습된 모델을 불러옴
         retrieval_model.load_state_dict(torch.load("best_retrieval_model.pth"))
-        assert os.path.isfile("best_retrieval_model.pth"), "No index file exists"
+        assert os.path.isfile("best_retrieval_model.pth"), "No retrieval model file exists."
+        logger.info("Retrieval model loaded from saved state.")
 
     retrieval_model.eval()
 
@@ -106,7 +114,10 @@ def main():
             max_length=config["retrieval"]["context_max_length"],
             stride=config["retrieval"]["context_stride"],
         )
-        contexts_emb = context_embedding(context_dataset, retrieval_model)
+        contexts_emb = context_embedding(
+            contextdataset=context_dataset, retrieval=retrieval_model, batch_size=config["retrieval"]["batch_size"]
+        )
+        logger.info("Context embeddings generated.")
 
         c_emb = contexts_emb["contexts_embedding"].detach().numpy().astype("float32")
         emb_size = c_emb.shape[-1]
@@ -125,8 +136,9 @@ def main():
         index.add_with_ids(c_emb, np.array(contexts_emb["document_id"]).astype("int64"))
 
         cpu_index = faiss.index_gpu_to_cpu(index)
-        index_file_path = "./data/embedding/context_index.faiss"
+        index_file_path = config["data"]["index_file_path"]
         faiss.write_index(cpu_index, index_file_path)
+        logger.info(f"FAISS index created and saved at {index_file_path}.")
 
     ################################################################################
     # 리더 학습 초기화
@@ -137,10 +149,12 @@ def main():
         stride=config["reader"]["context_stride"],
         train_data=train_dataset,
         val_data=valid_dataset,
+        # test_data=valid_dataset,
         predict_data=valid_dataset,
         batch_size=config["reader"]["batch_size"],
     )
     reader_model = ReaderModel(config["reader"])
+    logger.info("Reader model and dataloader initialized.")
 
     # 리더 모델 학습
     trainer = pl.Trainer(
@@ -149,50 +163,84 @@ def main():
         logger=wandb_logger,
         val_check_interval=1.0,
     )
-    trainer.fit(reader_model, datamodule=reader_dataloader)
+    logger.info("Starting Reader model training.")
+    if config["reader"]["TRAIN_READER"]:
+        trainer.fit(reader_model, datamodule=reader_dataloader)
+        torch.save(reader_model.state_dict(), "best_reader_model.pth")
+        logger.info("Reader model training completed and saved.")
+    else:
+        reader_model.load_state_dict(torch.load("best_reader_model.pth"))
+        assert os.path.isfile("best_reader_model.pth"), "No reader model file exists."
+        logger.info("Reader model loaded from saved state.")
 
     reader_model.eval()
+
     #############################################################################
     # faiss 인덱스를 불러와 valid data의 query에 대한 top k passages 출력
     index_file_path = config["data"]["index_file_path"]
-    assert os.path.isfile(index_file_path), "No index file exists"
+    assert os.path.isfile(index_file_path), "No FAISS index file exists."
     index = faiss.read_index(index_file_path)
     sgr = faiss.StandardGpuResources()
     index = faiss.index_cpu_to_gpu(sgr, 0, index)
+    logger.info("FAISS index loaded.")
 
     retrieval_model.index = index
+    logger.info("Retrieval model index set.")
+
     retrieval_output = trainer.predict(retrieval_model, datamodule=retrieval_dataloader)
+    logger.info("Retrieval model predictions completed.")
 
-    # reader에 retrieval의 결과를 넣어 정답을 출력
-    doc_id = [contexts[id.item()] for ids in retrieval_output for id in ids]
-    reader_dataloader.predict_data.map(lambda x, idx: {"context": doc_id[idx]}, with_indices=True)
-    # predict_dataset = valid_dataset.add_column("context", doc_id)
+    # 리더 예측 준비
+    doc_id = [contexts[idx.item()] for batch in retrieval_output for idx in batch]
+    logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
-    # reader_dataloader = ReaderDataLoader(
-    #     tokenizer=reader_tokenizer,
-    #     max_len=256,
-    #     stride=32,
-    #     predict_data=predict_dataset,
-    #     batch_size=8,
-    # )
+    assert len(doc_id) == len(valid_dataset), f"Expected {len(valid_dataset)} contexts, got {len(doc_id)}"
+    logger.info("Document IDs match the number of ground truth samples.")
 
+    # 새로운 ReaderDataset 생성
+    updated_predict_dataset = ReaderDataset(
+        question=valid_dataset["question"],
+        context=doc_id,
+        answer=valid_dataset["answers"],
+        tokenizer=reader_tokenizer,
+        max_len=config["reader"]["max_length"],
+        stride=config["reader"]["context_stride"],
+        stage="predict",
+    )
+
+    # ReaderDataLoader의 predict_dataset 교체
+    reader_dataloader.predict_dataset = updated_predict_dataset
+    logger.info("Reader dataloader predict dataset updated with retrieved contexts.")
+
+    # 리더 예측 수행
     reader_outputs = trainer.predict(reader_model, datamodule=reader_dataloader)
-    # print(len(reader_outputs))
+    logger.info("Reader model predictions completed.")
 
-    predictions = reader_outputs
-    ground_truths = [sample["answers"]["text"][0] for sample in reader_dataloader.predict_data]
+    # reader_outputs는 리스트의 리스트 형태이므로 평탄화
+    predictions = [answer for batch in reader_outputs for answer in batch]
+    logger.info(f"Predictions flattened. Total: {len(predictions)}")
+    print(len(predictions), predictions)
 
-    # for i in zip(predictions, ground_truths):
-    #     print(i)
+    # ground_truths 수집
+    ground_truths = [answer["text"][0] for answer in updated_predict_dataset.answer]
+    logger.info(f"Ground truths collected. Total: {len(ground_truths)}")
+    print(len(ground_truths), ground_truths)
+
+    # 예측과 정답의 수가 일치하는지 확인
+    assert len(predictions) == len(
+        ground_truths
+    ), f"Predictions count {len(predictions)} does not match ground truths count {len(ground_truths)}."
+    logger.info("Predictions and ground truths count match.")
 
     # EM과 F1 점수 계산
     em_scores = [compute_exact(truth, pred) for truth, pred in zip(ground_truths, predictions)]
     f1_scores = [compute_f1(truth, pred) for truth, pred in zip(ground_truths, predictions)]
 
-    em = sum(em_scores) / len(em_scores)
-    f1 = sum(f1_scores) / len(f1_scores)
+    em = sum(em_scores) / len(em_scores) if em_scores else 0
+    f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0
 
-    print(f"EM: {em:.4f}, F1: {f1:.4f}")
+    logger.info(f"Evaluation Results - EM: {em:.4f}, F1: {f1:.4f}")
+    # print(f"EM: {em:.4f}, F1: {f1:.4f}")
 
 
 if __name__ == "__main__":

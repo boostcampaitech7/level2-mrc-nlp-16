@@ -153,12 +153,20 @@ class RetrievalModel(pl.LightningModule):
 
 
 class ReaderModel(pl.LightningModule):
-    def __init__(self, config, index=None):
+    """
+    질문에 대한 답변의 시작 및 끝 위치를 예측하는 모델.
+
+    Args:
+        config (dict): 모델 설정을 포함하는 딕셔너리.
+    """
+
+    def __init__(self, config):
         super().__init__()
 
         self.lr = config["lr"]
         self.model_name = config["model_name"]
 
+        # 사전 학습된 QA 모델 로드 및 LoRA 적용
         model = AutoModelForQuestionAnswering.from_pretrained(self.model_name)
         peft_config = LoraConfig(
             r=config["LoRA_r"],
@@ -170,71 +178,109 @@ class ReaderModel(pl.LightningModule):
         self.mod = get_peft_model(model, peft_config)
 
         self.criterion = nn.CrossEntropyLoss()
-
-        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
     def forward(self, input_ids, attention_mask):
+        """
+        모델의 순전파 과정.
+
+        Args:
+            input_ids (Tensor): 입력 토큰 ID.
+            attention_mask (Tensor): 어텐션 마스크.
+
+        Returns:
+            Tuple[Tensor, Tensor]: Start logits과 End logits.
+        """
         output = self.mod(input_ids, attention_mask=attention_mask)
         return output.start_logits, output.end_logits
 
     def training_step(self, batch, batch_idx):
+        """
+        학습 단계에서의 손실 계산.
+
+        Args:
+            batch (dict): 배치 데이터.
+            batch_idx (int): 배치 인덱스.
+
+        Returns:
+            Tensor: 손실 값.
+        """
         start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
         loss = (
-            self.criterion(start_logits, batch["start_tokens"].float())
-            + self.criterion(end_logits, batch["end_tokens"].float())
+            self.criterion(start_logits, batch["start_tokens"].long())
+            + self.criterion(end_logits, batch["end_tokens"].long())
         ) / 2
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
+        """
+        검증 단계에서의 손실 계산.
+
+        Args:
+            batch (dict): 배치 데이터.
+            batch_idx (int): 배치 인덱스.
+
+        Returns:
+            Tensor: 손실 값.
+        """
         start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
         loss = (
-            self.criterion(start_logits, batch["start_tokens"].float())
-            + self.criterion(end_logits, batch["end_tokens"].float())
+            self.criterion(start_logits, batch["start_tokens"].long())
+            + self.criterion(end_logits, batch["end_tokens"].long())
         ) / 2
-        self.log("train_loss", loss, on_step=False, on_epoch=True)
+        self.log("validation_loss", loss, on_step=False, on_epoch=True)
         return loss
 
-    def test_step(self, batch, batch_idx):
-        pass
-
     def predict_step(self, batch, batch_idx):
-        input_ids = batch["input_ids"]
-        attention_mask = batch["attention_mask"]
+        """
+        예측 단계에서 각 질문에 대한 답변을 생성합니다.
 
-        # 1. Start/end position prediction
-        start_logits, end_logits = self(input_ids, attention_mask)
+        Args:
+            batch (dict): 배치 데이터로, 'input_ids'와 'attention_mask'를 포함합니다.
+            batch_idx (int): 배치 인덱스.
 
-        # 2. 가장 높은 점수의 start/end 위치 찾기
-        start_index = start_logits.argmax(dim=1)
-        end_index = end_logits.argmax(dim=1)
+        Returns:
+            list: 각 질문에 대한 예측된 답변 리스트.
+        """
+        try:
+            input_ids = batch["input_ids"]
+            attention_mask = batch["attention_mask"]
 
-        # 3. 최고 점수의 답변 추출
-        best_answer = ""
-        max_score = float("-inf")
+            # Start와 End 위치 예측
+            start_logits, end_logits = self(input_ids, attention_mask)
 
-        for i in range(input_ids.size(0)):  # 배치의 각 항목에 대해
-            answer_start = start_index[i]
-            answer_end = end_index[i]
+            # Start와 End 위치의 인덱스 찾기
+            start_index = start_logits.argmax(dim=1)
+            end_index = end_logits.argmax(dim=1)
 
-            if answer_start <= answer_end and answer_end - answer_start < 100:  # 최대 길이 제한
-                score = start_logits[i, answer_start] + end_logits[i, answer_end]
-                if score > max_score:
-                    max_score = score
-                    answer_text = self.tokenizer.decode(input_ids[i][answer_start : answer_end + 1])
-                    best_answer = answer_text
+            # 각 샘플에 대한 답변 추출
+            best_answers = []
+            for i in range(input_ids.size(0)):
+                answer_start = start_index[i]
+                answer_end = end_index[i]
 
-        return best_answer
+                # 유효한 답변인지 확인
+                if answer_start <= answer_end and answer_end - answer_start < 100:
+                    # 답변 토큰 디코딩
+                    answer_text = self.tokenizer.decode(
+                        input_ids[i][answer_start : answer_end + 1], skip_special_tokens=True
+                    )
+                    best_answers.append(answer_text)
+                else:
+                    best_answers.append("")
 
-    # def predict_step(self, batch, batch_idx):
-    #     start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
-    #     answer_start = start_logits.argmax(dim=1)
-    #     answer_end = end_logits.argmax(dim=1)
-    #     answers = []
-    #     for idx, row in enumerate(batch["input_ids"]):
-    #         answer = self.tokenizer.convert_ids_to_tokens(row[answer_start[idx] : answer_end[idx] + 1])
-    #         answers.append(self.tokenizer.convert_tokens_to_string(answer))
-    #     return answers
+            return best_answers
+        except KeyError as e:
+            raise KeyError(f"배치 데이터에 필요한 키가 누락되었습니다: {e}")
+        except Exception as e:
+            raise RuntimeError(f"예측 중 오류가 발생했습니다: {e}")
 
     def configure_optimizers(self):
+        """
+        옵티마이저 설정.
+
+        Returns:
+            Optimizer: Adam 옵티마이저.
+        """
         return torch.optim.Adam(self.parameters(), lr=self.lr)

@@ -1,6 +1,6 @@
 seed:
   value: 123
-  deterministic: true
+  DETERMINISTIC: True
 
 wandb:
   project: "ODQA_project"
@@ -27,6 +27,7 @@ retrieval:
   LoRA_drop_out: 0.005
 
 reader:
+  TRAIN_READER: True
   model_name: "klue/bert-base"
   module_names: ["query", "key", "value"]
   epoch: 2
