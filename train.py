@@ -181,12 +181,12 @@ def main():
 
         ## best model & configuration uploading
         config_dict = dict(config["reader"])
-        with open("config.json", "w") as f:
+        with open("config_reader.json", "w") as f:
             json.dump(config_dict, f)
 
         artifact = wandb.Artifact(name=f"model-{wandb.run.id}", type="model")
         artifact.add_file(checkpoint_callback.best_model_path)
-        artifact.add_file("config.json")
+        artifact.add_file("config_reader.json")
         wandb.log_artifact(artifact)
         logger.info("Reader model training completed and saved.")
 
