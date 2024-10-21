@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import yaml
 from datasets import load_from_disk
 from IPython.display import clear_output
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.feature_extraction.text import TfidfVectorizer
 from torch.utils.data import DataLoader, Dataset
@@ -29,6 +30,7 @@ from transformers import (
     pipeline,
 )
 
+import wandb
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
 from data_modules.data_sets import ContextDataset, ReaderDataset
 from models.metric import compute_exact, compute_f1
@@ -142,36 +144,51 @@ def main():
 
     ################################################################################
     # 리더 학습 초기화
-    reader_tokenizer = AutoTokenizer.from_pretrained(config["reader"]["model_name"])
-    reader_dataloader = ReaderDataLoader(
-        tokenizer=reader_tokenizer,
-        max_len=config["reader"]["max_length"],
-        stride=config["reader"]["context_stride"],
-        train_data=train_dataset,
-        val_data=valid_dataset,
-        batch_size=config["reader"]["batch_size"],
-    )
-    reader_model = ReaderModel(config["reader"])
-    logger.info("Reader model and dataloader initialized.")
-
-    # 리더 모델 학습
-    trainer = pl.Trainer(
-        accelerator="gpu",
-        max_epochs=config["reader"]["epoch"],
-        logger=wandb_logger,
-        val_check_interval=1.0,
-    )
-    logger.info("Starting Reader model training.")
     if config["reader"]["TRAIN_READER"]:
-        trainer.fit(reader_model, datamodule=reader_dataloader)
-        torch.save(reader_model.state_dict(), "best_reader_model.pth")
-        logger.info("Reader model training completed and saved.")
-    else:
-        reader_model.load_state_dict(torch.load("best_reader_model.pth"))
-        assert os.path.isfile("best_reader_model.pth"), "No reader model file exists."
-        logger.info("Reader model loaded from saved state.")
+        reader_tokenizer = AutoTokenizer.from_pretrained(config["reader"]["model_name"])
+        reader_dataloader = ReaderDataLoader(
+            tokenizer=reader_tokenizer,
+            max_len=config["reader"]["max_length"],
+            stride=config["reader"]["context_stride"],
+            train_data=train_dataset,
+            val_data=valid_dataset,
+            batch_size=config["reader"]["batch_size"],
+        )
+        reader_model = ReaderModel(config["reader"])
+        logger.info("Reader model and dataloader initialized.")
 
-    reader_model.eval()
+        MODEL_NAME = config["model_name"]
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=f"saved/{MODEL_NAME}/{wandb.run.id}",
+            filename="{epoch:02d}",
+            save_top_k=1,
+            monitor="Exact Match",
+            mode="max",
+        )
+        early_stop_callback = EarlyStopping(monitor="validation_loss", patience=4, mode="min")
+
+        # 리더 모델 학습
+        trainer = pl.Trainer(
+            accelerator="gpu",
+            max_epochs=config["reader"]["epoch"],
+            logger=wandb_logger,
+            callbacks=[checkpoint_callback, early_stop_callback],
+            val_check_interval=1.0,
+        )
+        logger.info("Starting Reader model training.")
+
+        trainer.fit(reader_model, datamodule=reader_dataloader)
+
+        ## best model & configuration uploading
+        config_dict = dict(config)
+        with open("config.json", "w") as f:
+            json.dump(config_dict, f)
+
+        artifact = wandb.Artifact(name=f"model-{wandb.run.id}", type="model")
+        artifact.add_file(checkpoint_callback.best_model_path)
+        artifact.add_file("config.json")
+        wandb.log_artifact(artifact)
+        logger.info("Reader model training completed and saved.")
 
     #############################################################################
     # faiss 인덱스를 불러와 valid data의 query에 대한 top k passages 출력
