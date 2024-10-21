@@ -161,10 +161,10 @@ class ReaderModel(pl.LightningModule):
 
         model = AutoModelForQuestionAnswering.from_pretrained(self.model_name)
         peft_config = LoraConfig(
-            r=16,
-            lora_alpha=16,
+            r=config["LoRA_r"],
+            lora_alpha=config["LoRA_alpha"],
             target_modules=["query", "key", "value"],
-            lora_dropout=0.05,
+            lora_dropout=config["LoRA_drop_out"],
             bias="none",
         )
         self.mod = get_peft_model(model, peft_config)
@@ -199,14 +199,42 @@ class ReaderModel(pl.LightningModule):
         pass
 
     def predict_step(self, batch, batch_idx):
-        start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
-        answer_start = start_logits.argmax(dim=1)
-        answer_end = end_logits.argmax(dim=1)
-        answers = []
-        for idx, row in enumerate(batch["input_ids"]):
-            answer = self.tokenizer.convert_ids_to_tokens(row[answer_start[idx] : answer_end[idx] + 1])
-            answers.append(self.tokenizer.convert_tokens_to_string(answer))
-        return answers
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+
+        # 1. Start/end position prediction
+        start_logits, end_logits = self(input_ids, attention_mask)
+
+        # 2. 가장 높은 점수의 start/end 위치 찾기
+        start_index = start_logits.argmax(dim=1)
+        end_index = end_logits.argmax(dim=1)
+
+        # 3. 최고 점수의 답변 추출
+        best_answer = ""
+        max_score = float("-inf")
+
+        for i in range(input_ids.size(0)):  # 배치의 각 항목에 대해
+            answer_start = start_index[i]
+            answer_end = end_index[i]
+
+            if answer_start <= answer_end and answer_end - answer_start < 100:  # 최대 길이 제한
+                score = start_logits[i, answer_start] + end_logits[i, answer_end]
+                if score > max_score:
+                    max_score = score
+                    answer_text = self.tokenizer.decode(input_ids[i][answer_start : answer_end + 1])
+                    best_answer = answer_text
+
+        return best_answer
+
+    # def predict_step(self, batch, batch_idx):
+    #     start_logits, end_logits = self(batch["input_ids"], batch["attention_mask"])
+    #     answer_start = start_logits.argmax(dim=1)
+    #     answer_end = end_logits.argmax(dim=1)
+    #     answers = []
+    #     for idx, row in enumerate(batch["input_ids"]):
+    #         answer = self.tokenizer.convert_ids_to_tokens(row[answer_start[idx] : answer_end[idx] + 1])
+    #         answers.append(self.tokenizer.convert_tokens_to_string(answer))
+    #     return answers
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)

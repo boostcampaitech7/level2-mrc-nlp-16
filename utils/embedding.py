@@ -1,6 +1,6 @@
 import torch
-import tqdm
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 
 def collate_fn(batch):
@@ -31,6 +31,11 @@ def context_embedding(contextdataset, retrieval):
             ).last_hidden_state[:, 0, :]
 
         batch_result = []
+        unique_overflow = batch["overflow"].unique()
+
+        for idx in unique_overflow:
+            row = c_emb[batch["overflow"] == idx, :].mean(dim=0)
+            batch_result.append(row)
         # unique_overflow = batch["overflow"].unique()
 
         # for idx in unique_overflow:

@@ -1,7 +1,8 @@
 import pytorch_lightning as pl
 import torch
-from data_sets import ReaderDataset, RetrievalDataset
 from torch.utils.data import DataLoader
+
+from data_modules.data_sets import ReaderDataset, RetrievalDataset
 
 
 class RetrievalDataLoader(pl.LightningDataModule):
