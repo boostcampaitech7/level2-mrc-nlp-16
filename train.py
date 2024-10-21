@@ -121,43 +121,6 @@ def main():
         logger.info("Retrieval model training completed and saved.")
 
     ################################################################################
-    # 학습된 retrieval으로 context의 임베딩을 생성,
-    # faiss 인덱스 생성 후 저장
-    if config["retrieval"]["TRAIN_RETRIEVAL"]:
-        context_dataset = ContextDataset(
-            context=list(contexts.values()),
-            document_id=list(contexts.keys()),
-            tokenizer=retrieval_tokenizer,
-            max_length=config["retrieval"]["context_max_length"],
-            stride=config["retrieval"]["context_stride"],
-        )
-        contexts_emb = context_embedding(
-            contextdataset=context_dataset, retrieval=retrieval_model, batch_size=config["retrieval"]["batch_size"]
-        )
-        logger.info("Context embeddings generated.")
-
-        c_emb = contexts_emb["contexts_embedding"].detach().numpy().astype("float32")
-        emb_size = c_emb.shape[-1]
-
-        quantizer = faiss.IndexFlatIP(emb_size)
-        index = faiss.IndexIVFPQ(
-            quantizer, emb_size, config["faiss"]["nlist"], config["faiss"]["m"], 8, faiss.METRIC_INNER_PRODUCT
-        )
-        index = faiss.IndexIDMap(index)
-
-        sgr = faiss.StandardGpuResources()
-        index = faiss.index_cpu_to_gpu(sgr, 0, index)
-
-        faiss.normalize_L2(c_emb)
-        index.train(c_emb)
-        index.add_with_ids(c_emb, np.array(contexts_emb["document_id"]).astype("int64"))
-
-        cpu_index = faiss.index_gpu_to_cpu(index)
-        index_file_path = config["data"]["index_file_path"]
-        faiss.write_index(cpu_index, index_file_path)
-        logger.info(f"FAISS index created and saved at {index_file_path}.")
-
-    ################################################################################
     # 리더 학습 초기화
     if config["reader"]["TRAIN_READER"]:
         reader_tokenizer = AutoTokenizer.from_pretrained(config["reader"]["model_name"])
