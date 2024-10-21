@@ -180,7 +180,7 @@ def main():
         trainer.fit(reader_model, datamodule=reader_dataloader)
 
         ## best model & configuration uploading
-        config_dict = dict(config)
+        config_dict = dict(config["reader"])
         with open("config.json", "w") as f:
             json.dump(config_dict, f)
 
