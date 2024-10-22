@@ -170,7 +170,6 @@ class ReaderModel(pl.LightningModule):
         self.model_name = config["MODEL_NAME"]
         self.module_names = config["MODULE_NAMES"]
         self.lr = config["LEARNING_RATE"]
-        self.negative_length = config["NEGATIVE_LENGTH"]
         self.LoRA_r = config["LORA_RANK"]
         self.LoRA_alpha = config["LORA_ALPHA"]
         self.LoRA_drop_out = config["LORA_DROP_OUT"]

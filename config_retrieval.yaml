@@ -1,6 +1,7 @@
 project: ODQA_project
+name: temp
 program: train_retrieval.py
-method: bayes
+method: random
 metric:
   name: validation_similarity
   goal: maximize
@@ -28,7 +29,7 @@ parameters:
   NEGATIVE_LENGTH:
     value: 2
   MODEL_NAME:
-    value: Dongjin-kr/ko-reranker
+    value: jhgan/ko-sroberta-multitask
   MODULE_NAMES:
     value: ['query', 'key', 'value']
   LORA_RANK:

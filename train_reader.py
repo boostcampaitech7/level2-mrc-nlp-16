@@ -39,15 +39,15 @@ from utils import load_config, set_seed
 from utils.embedding import context_embedding
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 
 def main():
     # wandb 로깅
     wandb_logger = WandbLogger()
     config = wandb_logger.experiment.config
-    logger.info("Wandb logger initialized.")
+    # logger.info("Wandb logger initialized.")
 
     # Parameters
     SEED = config["SEED"]
@@ -67,22 +67,22 @@ def main():
 
     # 하이퍼파라미터 로딩, config['seed']['value'] 형태로 사용
     # config = load_config("./config.yaml")
-    logger.info("Configuration loaded.")
+    # logger.info("Configuration loaded.")
 
     # 시드 고정
     set_seed(SEED, DETERMINISTIC)
-    logger.info("Random seed set.")
+    # logger.info("Random seed set.")
 
     # 데이터셋 로드
     dataset = load_from_disk(DATA_PATH)
     train_dataset = dataset["train"]
     valid_dataset = dataset["validation"]
-    logger.info("Datasets loaded.")
+    # logger.info("Datasets loaded.")
 
     with open(CONTEXTS_PATH, "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
-    logger.info("Contexts loaded.")
+    # logger.info("Contexts loaded.")
 
     reader_tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     reader_dataloader = ReaderDataLoader(
@@ -93,8 +93,8 @@ def main():
         val_data=valid_dataset,
         batch_size=BATCH_SIZE,
     )
-    reader_model = ReaderModel(config)
-    logger.info("Reader model and dataloader initialized.")
+    reader_model = ReaderModel(dict(config))
+    # logger.info("Reader model and dataloader initialized.")
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"saved/{MODEL_NAME}/{wandb.run.id}",
@@ -113,7 +113,7 @@ def main():
         callbacks=[checkpoint_callback, early_stop_callback],
         val_check_interval=1.0,
     )
-    logger.info("Starting Reader model training.")
+    # logger.info("Starting Reader model training.")
 
     trainer.fit(reader_model, datamodule=reader_dataloader)
 
@@ -126,7 +126,7 @@ def main():
     artifact.add_file(checkpoint_callback.best_model_path)
     artifact.add_file("config_reader.json")
     wandb.log_artifact(artifact)
-    logger.info("Reader model training completed and saved.")
+    # logger.info("Reader model training completed and saved.")
 
 
 if __name__ == "__main__":

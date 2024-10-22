@@ -1,6 +1,7 @@
 project: ODQA_project
+name: temp
 program: train_reader.py
-method: bayes
+method: random
 metric:
   name: Exact Match
   goal: maximize
@@ -16,15 +17,15 @@ parameters:
   EPOCHS:
     value: 20
   BATCH_SIZE:
-    value: 2
+    value: 1
   LEARNING_RATE:
     value: 0.0001
   MAX_LEN:
-    value: 445
+    value: 512
   STRIDE:
     value: 16
   MODEL_NAME:
-    value: Dongjin-kr/ko-reranker
+    value: jhgan/ko-sroberta-multitask
   MODULE_NAMES:
     value: ['query', 'key', 'value']
   LORA_RANK:
