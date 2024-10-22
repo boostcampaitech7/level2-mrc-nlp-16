@@ -75,6 +75,7 @@ class RetrievalDataLoader(pl.LightningDataModule):
         elif stage == "predict":
             self.predict_dataset = RetrievalDataset(
                 question=self.predict_data["question"],
+                question_id=self.predict_data["id"],
                 tokenizer=self.tokenizer,
                 q_max_length=self.q_max_length,
                 c_max_length=None,

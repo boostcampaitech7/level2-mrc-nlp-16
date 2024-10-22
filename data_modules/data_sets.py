@@ -139,10 +139,11 @@ class ContextDataset(Dataset):
 
 
 class ReaderDataset(Dataset):
-    def __init__(self, question, context, tokenizer, max_len, stride, stage, answer=None):
+    def __init__(self, question, context, tokenizer, max_len, stride, stage, question_id=None, answer=None):
         self.question = question
         self.context = context
         self.answer = answer
+        self.question_id = question_id
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.stride = stride
@@ -198,6 +199,8 @@ class ReaderDataset(Dataset):
             contexts = self.context[idx]  ## selected contexts
             if self.stage == "test":
                 answer = self.answer[idx]
+            if self.stage == "predict":
+                question_id = self.question_id[idx]
 
             res = {}
             for doc_id, context in enumerate(contexts):
@@ -217,7 +220,10 @@ class ReaderDataset(Dataset):
                     chunk_res = {}
                     chunk_res["input_ids"] = chunk
                     chunk_res["attention_mask"] = encoding["attention_mask"][chunk_idx]
-                    chunk_res["answer_text"] = answer["text"][0]
+                    if self.stage == "test":
+                        chunk_res["answer_text"] = answer["text"][0]
+                    if self.stage == "predict":
+                        chunk_res["question_id"] = question_id
                     doc_res[chunk_idx] = chunk_res
                 res[doc_id] = doc_res
 
