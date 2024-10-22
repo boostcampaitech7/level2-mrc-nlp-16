@@ -68,7 +68,7 @@ def main(arg):
     index.add_with_ids(c_emb, np.array(contexts_emb["document_id"]).astype("int64"))
 
     cpu_index = faiss.index_gpu_to_cpu(index)
-    faiss.write_index(cpu_index, f"{index_file_path}/context_index.faiss")
+    faiss.write_index(cpu_index, index_file_path)
 
 
 if __name__ == "__main__":
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     args.add_argument(
         "-i",
         "--index_file_path",
-        default="./saved/embeddings",
+        default="./saved/embeddings/context_index.faiss",
         type=str,
         help="file path for faiss index (default: None)",
     )
