@@ -14,6 +14,8 @@ from transformers import (
     pipeline,
 )
 
+from models.metric import compute_exact, compute_f1
+
 
 class RetrievalModel(pl.LightningModule):
     def __init__(self, config):
@@ -216,7 +218,7 @@ class ReaderModel(pl.LightningModule):
 
         loss_start = self.criterion(torch.cat(start_logits, dim=0), batch["start_tokens"].squeeze(0).long())
         loss_end = self.criterion(torch.cat(end_logits, dim=0), batch["end_tokens"].squeeze(0).long())
-        loss = (loss_start+loss_end)/2
+        loss = (loss_start + loss_end) / 2
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         return loss
 
@@ -251,10 +253,30 @@ class ReaderModel(pl.LightningModule):
 
         loss_start = self.criterion(torch.cat(start_logits, dim=0), batch["start_tokens"].squeeze(0).long())
         loss_end = self.criterion(torch.cat(end_logits, dim=0), batch["end_tokens"].squeeze(0).long())
-        loss = (loss_start+loss_end)/2
+        loss = (loss_start + loss_end) / 2
         self.log("validation_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("Exact Match", match, on_step=False, on_epoch=True, prog_bar=True)
         return loss
+
+    def test_step(self, batch, batch_idx):
+        max_prob = 0
+        answer = ""
+        answer_real = batch[0][0]["answer_text"][0]
+        for doc_id in range(len(batch)):
+            for chunk_idx in range(len(batch[doc_id])):
+                input_ids = batch[doc_id][chunk_idx]["input_ids"]
+                attention_mask = batch[doc_id][chunk_idx]["attention_mask"]
+                start_logits, end_logits = self(input_ids, attention_mask)
+                start_logit, end_logit = start_logits.max(), end_logits.max()
+                answer_start = start_logits.argmax()
+                answer_end = end_logits.argmax()
+                if start_logit * end_logit > max_prob and answer_start != 0 and answer_end != 0:
+                    answer = self.tokenizer.decode(input_ids[0, answer_start : answer_end + 1])
+        EM = compute_exact(answer_real, answer)
+        F1 = compute_f1(answer_real, answer)
+        self.log("Test_Exact_Match", EM, on_step=False, on_epoch=True)
+        self.log("Test_F1_Socre", F1, on_step=False, on_epoch=True)
+        return answer
 
     def predict_step(self, batch, batch_idx):
         """
@@ -277,12 +299,8 @@ class ReaderModel(pl.LightningModule):
                 start_logit, end_logit = start_logits.max(), end_logits.max()
                 answer_start = start_logits.argmax()
                 answer_end = end_logits.argmax()
-                if (
-                    start_logit*end_logit > max_prob
-                    and answer_start != 0
-                    and answer_end != 0
-                ):
-                    answer = self.tokenizer.decode(input_ids[0, answer_start:answer_end+1])
+                if start_logit * end_logit > max_prob and answer_start != 0 and answer_end != 0:
+                    answer = self.tokenizer.decode(input_ids[0, answer_start : answer_end + 1])
         return answer
 
     def configure_optimizers(self):
