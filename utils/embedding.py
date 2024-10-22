@@ -17,8 +17,8 @@ def collate_fn(batch):
     }
 
 
-def context_embedding(contextdataset, retrieval):
-    contextloader = DataLoader(contextdataset, batch_size=2, collate_fn=collate_fn)
+def context_embedding(contextdataset, retrieval, batch_size):
+    contextloader = DataLoader(contextdataset, batch_size=batch_size, collate_fn=collate_fn)
 
     embeddings = []
     doc_id = []

@@ -15,6 +15,7 @@ from utils.embedding import context_embedding
 def main(arg):
     context_path = arg.context_path
     model_path = arg.model_path
+    file_path = arg.file_path
     batch_size = arg.batch_size
     nlist = arg.nlist
     m = arg.m
@@ -34,10 +35,11 @@ def main(arg):
     with open(f"{model_dir}/config_retrieval.json", "r") as f:
         config = json.load(f)
 
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
     retrieval = RetrievalModel(config)
-    checkpoint = torch.load(f"{model_dir}/{model_path}")
-    retrieval.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint = torch.load(f"{model_dir}/{file_path}")
+    print(f"{model_dir}/{file_path}")
+    retrieval.load_state_dict(checkpoint["state_dict"])
 
     # 학습된 retrieval으로 context의 임베딩을 생성,
     # faiss 인덱스 생성 후 저장
@@ -45,8 +47,8 @@ def main(arg):
         context=list(contexts.values()),
         document_id=list(contexts.keys()),
         tokenizer=tokenizer,
-        max_length=config["context_max_length"],
-        stride=config["context_stride"],
+        max_length=config["CONTEXT_MAX_LEN"],
+        stride=config["CONTEXT_STRIDE"],
     )
 
     contexts_emb = context_embedding(contextdataset=context_dataset, retrieval=retrieval, batch_size=batch_size)
@@ -66,7 +68,7 @@ def main(arg):
     index.add_with_ids(c_emb, np.array(contexts_emb["document_id"]).astype("int64"))
 
     cpu_index = faiss.index_gpu_to_cpu(index)
-    faiss.write_index(cpu_index, index_file_path)
+    faiss.write_index(cpu_index, f"{index_file_path}/context_index.faiss")
 
 
 if __name__ == "__main__":
@@ -74,7 +76,7 @@ if __name__ == "__main__":
     args.add_argument(
         "-c",
         "--context_path",
-        default=None,
+        default="./data/wikipedia_documents.json",
         type=str,
         help="directory path for contexts (default: None)",
     )
@@ -84,6 +86,13 @@ if __name__ == "__main__":
         default=None,
         type=str,
         help="artifact path for a model (default: None)",
+    )
+    args.add_argument(
+        "-f",
+        "--file_path",
+        default=None,
+        type=str,
+        help="checkpoint file path for a model (default: None)",
     )
     args.add_argument(
         "-b",
@@ -109,7 +118,7 @@ if __name__ == "__main__":
     args.add_argument(
         "-i",
         "--index_file_path",
-        default=None,
+        default="./saved/embeddings",
         type=str,
         help="file path for faiss index (default: None)",
     )
