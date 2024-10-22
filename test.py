@@ -1,8 +1,10 @@
 import argparse
 import json
 import os
+import pickle
 
 import faiss
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from datasets import load_from_disk
@@ -12,13 +14,15 @@ import wandb
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
 from data_modules.data_sets import ReaderDataset
 from models.model import ReaderModel, RetrievalModel
+from utils.util import normalize_rows
 
 
 def main(arg):
-    index_file_path = arg.index_file_path
+    contexts_embedding_path = arg.contexts_embedding_path
     model_path = arg.model_path
     data_path = arg.data_path
     contexts_path = arg.contexts_path
+    k = arg.k
 
     # 데이터셋 로드
     dataset = load_from_disk(data_path)
@@ -30,13 +34,10 @@ def main(arg):
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
     # logger.info("Contexts loaded.")
 
-    # faiss 인덱스를 불러와 valid data의 query에 대한 top k passages 출력
-    assert os.path.isfile(index_file_path), "No FAISS index file exists."
-    index = faiss.read_index(index_file_path)
-
-    sgr = faiss.StandardGpuResources()
-    index = faiss.index_cpu_to_gpu(sgr, 0, index)
-    # logger.info("FAISS index loaded.")
+    with open(contexts_embedding_path, "rb") as f:
+        contexts_embedding = pickle.load(f)
+    contexts_embedding = np.array(contexts_embedding)
+    contexts_embedding = normalize_rows(contexts_embedding)
 
     ## model/config loading
     wandb.login()
@@ -63,15 +64,15 @@ def main(arg):
     checkpoint = torch.load(f"{model_dir}/{model_path}")
     retrieval.load_state_dict(checkpoint["model_state_dict"])
 
-    retrieval.index = index
-    # logger.info("Retrieval model index set.")
+    retrieval.c_emb = contexts_embedding
 
     trainer = pl.Trainer(accelerator="gpu")
-    selected_doc_ids = trainer.predict(retrieval, datamodule=dataloader)
+    sims_dense = trainer.predict(retrieval, datamodule=dataloader)
     # logger.info("Retrieval model predictions completed.")
 
-    # 리더 예측 준비
-    selected_contexts = [contexts[idx.item()] for batch in selected_doc_ids for idx in batch]
+    sims = sims_dense
+    selected_doc_ids = np.argpartition(sims, -k, axis=1)[-k:]
+    selected_contexts = [contexts[idx] for idx in selected_doc_ids]
     # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
     run = wandb.init()

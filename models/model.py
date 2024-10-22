@@ -15,6 +15,7 @@ from transformers import (
 )
 
 from models.metric import compute_exact, compute_f1
+from utils.util import normalize_rows
 
 
 class RetrievalModel(pl.LightningModule):
@@ -29,7 +30,7 @@ class RetrievalModel(pl.LightningModule):
         self.LoRA_r = config["LORA_RANK"]
         self.LoRA_alpha = config["LORA_ALPHA"]
         self.LoRA_drop_out = config["LORA_DROP_OUT"]
-        self.index = None
+        self.c_emb = None
 
         mod = AutoModel.from_pretrained(self.model_name)
 
@@ -102,22 +103,21 @@ class RetrievalModel(pl.LightningModule):
             attention_mask=batch["question"]["attention_mask"].squeeze(),
         ).last_hidden_state[:, 0, :]
         q_emb = q_emb.cpu().detach().numpy().astype("float32")
-        q_emb = np.ascontiguousarray(q_emb)
-        faiss.normalize_L2(q_emb)
-        self.index.nprobe = 5
-        sim, idx = self.index.search(q_emb, 1)  ## 상위 k개 뽑는 방식 고려 -> k개 뽑아서 k개 모두에 대해 answer 구하려고?
-        match_ratio = (batch["document_id"].cpu().detach().numpy() == idx.squeeze()).sum() / len(idx.squeeze())
-        self.log("cosine_smilarity", sim.mean(), on_step=False, on_epoch=True)
-        self.log("match_ratio", match_ratio, on_step=False, on_epoch=True)
-        return sim, match_ratio
+        q_emb = normalize_rows(q_emb)
+
+        sims = np.dot(q_emb, self.c_emb.T).squeeze()
+        return sims
 
     def predict_step(self, batch, batch_idx):
         q_emb = self.mod_q(
             input_ids=batch["question"]["input_ids"].squeeze(),
             attention_mask=batch["question"]["attention_mask"].squeeze(),
         ).last_hidden_state[:, 0, :]
-        _, idx = self.index.search(q_emb.cpu().detach().numpy(), 1)
-        return idx
+        q_emb = q_emb.cpu().detach().numpy().astype("float32")
+        q_emb = normalize_rows(q_emb)
+
+        sims = np.dot(q_emb, self.c_emb.T).squeeze()
+        return sims
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
