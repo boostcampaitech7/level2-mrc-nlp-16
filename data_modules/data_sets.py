@@ -104,12 +104,11 @@ class RetrievalDataset(Dataset):
 
 
 class ContextDataset(Dataset):
-    def __init__(self, context, document_id, tokenizer, max_length, stride, truncation=True):
+    def __init__(self, context, document_id, tokenizer, max_length, truncation=True):
         self.context = context
         self.document_id = document_id
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.stride = stride
         self.truncation = truncation
 
     def __len__(self):
@@ -122,18 +121,14 @@ class ContextDataset(Dataset):
         c_enc = self.tokenizer(
             context,
             max_length=self.max_length,
-            stride=self.stride,
             padding="max_length",
             truncation=self.truncation,
-            return_overflowing_tokens=True,
-            return_offsets_mapping=True,
             return_tensors="pt",
         )
 
         return {
             "input_ids": c_enc["input_ids"],
             "attention_mask": c_enc["attention_mask"],
-            "overflow": c_enc["overflow_to_sample_mapping"],
             "document_id": document_id,
         }
 
