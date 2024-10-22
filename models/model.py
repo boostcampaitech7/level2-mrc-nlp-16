@@ -297,6 +297,7 @@ class ReaderModel(pl.LightningModule):
         """
         max_prob = 0
         answer = ""
+        question_id = batch[0][0]["question_id"][0]
         for doc_id in range(len(batch)):
             for chunk_idx in range(len(batch[doc_id])):
                 input_ids = batch[doc_id][chunk_idx]["input_ids"]
@@ -307,7 +308,7 @@ class ReaderModel(pl.LightningModule):
                 answer_end = end_logits.argmax()
                 if start_logit * end_logit > max_prob and answer_start != 0 and answer_end != 0:
                     answer = self.tokenizer.decode(input_ids[0, answer_start : answer_end + 1])
-        return answer
+        return question_id, answer
 
     def configure_optimizers(self):
         """
