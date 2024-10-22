@@ -101,11 +101,11 @@ def main(arg):
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument(
-        "-i",
-        "--index_file_path",
+        "-ce",
+        "--contexts_embedding_path",
         default=None,
         type=str,
-        help="file path for faiss index (default: None)",
+        help="file path for context embedding (default: None)",
     )
     args.add_argument(
         "-m",
@@ -127,6 +127,13 @@ if __name__ == "__main__":
         default=None,
         type=str,
         help="directory path for contexts (default: None)",
+    )
+    args.add_argument(
+        "-k",
+        "--k",
+        default=10,
+        type=int,
+        help="number of selected contexts (default: 10)",
     )
 
     arg = args.parse_args()
