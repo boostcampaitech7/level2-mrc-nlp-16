@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
     args.add_argument(
         "-ce",
-        "--contecontexts_embedding_pathxt_path",
+        "--contecontexts_embedding_path",
         default=None,
         type=str,
         help="directory path for context embedding (default: None)",
