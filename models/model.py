@@ -20,14 +20,15 @@ from models.metric import compute_exact, compute_f1
 class RetrievalModel(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
+        self.save_hyperparameters(config)
 
-        self.model_name = config["model_name"]
-        self.module_names = config["module_names"]
-        self.lr = config["lr"]
-        self.negative_length = config["negative_length"]
-        self.LoRA_r = config["LoRA_r"]
-        self.LoRA_alpha = config["LoRA_alpha"]
-        self.LoRA_drop_out = config["LoRA_drop_out"]
+        self.model_name = config["MODEL_NAME"]
+        self.module_names = config["MODULE_NAMES"]
+        self.lr = config["LEARNING_RATE"]
+        self.negative_length = config["NEGATIVE_LENGTH"]
+        self.LoRA_r = config["LORA_RANK"]
+        self.LoRA_alpha = config["LORA_ALPHA"]
+        self.LoRA_drop_out = config["LORA_DROP_OUT"]
         self.index = None
 
         mod = AutoModel.from_pretrained(self.model_name)
@@ -164,23 +165,29 @@ class ReaderModel(pl.LightningModule):
 
     def __init__(self, config):
         super().__init__()
+        self.save_hyperparameters(config)
 
-        self.lr = config["lr"]
-        self.model_name = config["model_name"]
+        self.model_name = config["MODEL_NAME"]
+        self.module_names = config["MODULE_NAMES"]
+        self.lr = config["LEARNING_RATE"]
+        self.negative_length = config["NEGATIVE_LENGTH"]
+        self.LoRA_r = config["LORA_RANK"]
+        self.LoRA_alpha = config["LORA_ALPHA"]
+        self.LoRA_drop_out = config["LORA_DROP_OUT"]
 
         # 사전 학습된 QA 모델 로드 및 LoRA 적용
         model = AutoModelForQuestionAnswering.from_pretrained(self.model_name)
         peft_config = LoraConfig(
-            r=config["LoRA_r"],
-            lora_alpha=config["LoRA_alpha"],
-            target_modules=["query", "key", "value"],
-            lora_dropout=config["LoRA_drop_out"],
+            r=self.LoRA_r,
+            lora_alpha=self.LoRA_alpha,
+            target_modules=self.module_names,
+            lora_dropout=self.LoRA_drop_out,
             bias="none",
         )
         self.mod = get_peft_model(model, peft_config)
 
         self.criterion = nn.CrossEntropyLoss()
-        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
     def forward(self, input_ids, attention_mask):
         """
