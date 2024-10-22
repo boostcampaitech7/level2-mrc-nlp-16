@@ -53,38 +53,6 @@ class RetrievalModel(pl.LightningModule):
             :, 0, :
         ]
 
-        ## mean method
-        # c_emb_list = []
-        # unique_overflow = context["overflow"].unique()
-        # for idx in unique_overflow:
-        #     row = c_emb[context["overflow"]==idx, :].mean(dim=0)
-        #     c_emb_list.append(row)
-        # c_emb = torch.stack(c_emb_list)
-
-        # nc_emb_list = []
-        # unique_overflow = negative_context["overflow"].unique()
-        # for idx in unique_overflow:
-        #     row = nc_emb[negative_context["overflow"]==idx, :].mean(dim=0)
-        #     nc_emb_list.append(row)
-        # nc_emb = torch.stack(nc_emb_list)
-
-        ## max method
-        # c_emb_list = []
-        # unique_overflow = context["overflow"].unique()
-        # for idx in unique_overflow:
-        #     rows = c_emb[context["overflow"]==idx, :]
-        #     sim_max_index = q_emb[idx, :].matmul(rows.T).argmax()
-        #     c_emb_list.append(rows[sim_max_index, :])
-        # c_emb = torch.stack(c_emb_list)
-
-        # nc_emb_list = []
-        # unique_overflow = negative_context["overflow"].unique()
-        # for idx in unique_overflow:
-        #     rows = nc_emb[negative_context["overflow"]==idx, :]
-        #     sim_max_index = q_emb[idx, :].matmul(rows.T).argmax()
-        #     nc_emb_list.append(rows[sim_max_index, :])
-        # nc_emb = torch.stack(nc_emb_list)
-
         return q_emb, c_emb
 
     def training_step(self, batch, batch_idx):
