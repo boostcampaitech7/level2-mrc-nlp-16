@@ -18,14 +18,14 @@ def main(arg):
     index_file_path = arg.index_file_path
     model_path = arg.model_path
     data_path = arg.data_path
-    contexts_path = arg.contexts_path
+    context_path = arg.context_path
 
     # 데이터셋 로드
     dataset = load_from_disk(data_path)
     valid_dataset = dataset["validation"]
     # logger.info("Datasets loaded.")
 
-    with open(contexts_path, "r", encoding="utf-8") as f:
+    with open(context_path, "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
     # logger.info("Contexts loaded.")
