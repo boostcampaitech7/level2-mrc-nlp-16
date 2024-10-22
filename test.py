@@ -59,7 +59,7 @@ def main(arg):
         batch_size=config["batch_size"],
         negative_length=config["negative_length"],
     )
-    retrieval = RetrievalModel(config)
+    retrieval = RetrievalModel(dict(config))
     checkpoint = torch.load(f"{model_dir}/{model_path}")
     retrieval.load_state_dict(checkpoint["model_state_dict"])
 
@@ -90,7 +90,7 @@ def main(arg):
         selected_contexts=selected_contexts,
         batch_size=config["batch_size"],
     )
-    reader = ReaderModel(config)
+    reader = ReaderModel(dict(config))
     checkpoint = torch.load(f"{model_dir}/{model_path}")
     reader.load_state_dict(checkpoint["model_state_dict"])
 
