@@ -1,0 +1,37 @@
+project: ODQA_project
+program: train_retrieval.py
+method: bayes
+metric:
+  name: validation_similarity
+  goal: maximize
+parameters:
+  SEED:
+    value: 12345
+  DATA_PATH:
+    value: './data/train_dataset/'
+  CONTEXTS_PATH:
+    value: './data/wikipedia_documents.json'
+  EPOCHS:
+    value: 20
+  BATCH_SIZE:
+    value: 2
+  LEARNING_RATE:
+    value: 0.0001
+  QUESTION_MAX_LEN:
+    value: 64
+  CONTEXT_MAX_LEN:
+    value: 445
+  CONTEXT_STRIDE:
+    value: 16
+  NEGATIVE_LENGTH:
+    value: 2
+  MODEL_NAME:
+    value: Dongjin-kr/ko-reranker
+  MODULE_NAMES:
+    value: ['query', 'key', 'value']
+  LORA_RANK:
+    value: 8
+  LORA_ALPHA:
+    value: 8
+  LORA_DROP_OUT:
+    value: 0.005
