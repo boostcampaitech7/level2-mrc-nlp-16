@@ -147,19 +147,19 @@ class ReaderDataset(Dataset):
         self.max_len = max_len
         self.stride = stride
         self.stage = stage
-    
+
     def __len__(self):
         return len(self.question)
-    
+
     def __getitem__(self, idx):
         if self.stage == "fit":
             question = self.question[idx]
             context = self.context[idx]  ## from train or valid dataset
-            
+
             answer = self.answer[idx]
             answer_start = answer["answer_start"][0]
             answer_end = answer_start + len(answer["text"][0]) - 1
-            
+
             encoding = self.tokenizer(
                 question,
                 context,
@@ -178,28 +178,26 @@ class ReaderDataset(Dataset):
             res["start_tokens"] = torch.empty(encoding["input_ids"].shape[0])
             res["end_tokens"] = torch.empty(encoding["input_ids"].shape[0])
             for chunk_idx, chunk in enumerate(encoding["offset_mapping"]):
-
                 sequence_ids = encoding.sequence_ids(chunk_idx)
                 chunk_start_token = sequence_ids.index(1)
-                chunk_end_token = len(sequence_ids)-1-(sequence_ids[::-1].index(1))
-                if not (
-                    answer_start >= chunk[chunk_start_token][0]
-                    and answer_end <= chunk[chunk_end_token][1]
-                ):
+                chunk_end_token = len(sequence_ids) - 1 - (sequence_ids[::-1].index(1))
+                if not (answer_start >= chunk[chunk_start_token][0] and answer_end <= chunk[chunk_end_token][1]):
                     res["start_tokens"][chunk_idx] = 0
                     res["end_tokens"][chunk_idx] = 0
                 else:
                     for token_idx, (start, end) in enumerate(chunk):
-                        if encoding.sequence_ids(chunk_idx)[token_idx] != 1 :
+                        if encoding.sequence_ids(chunk_idx)[token_idx] != 1:
                             continue
-                        if answer_start in range(start, end+1):
+                        if answer_start in range(start, end + 1):
                             res["start_tokens"][chunk_idx] = token_idx
-                        if answer_end in range(start, end+1):
+                        if answer_end in range(start, end + 1):
                             res["end_tokens"][chunk_idx] = token_idx
 
-        elif self.stage == "predict":
+        elif self.stage in ["predict", "test"]:
             question = self.question[idx]
             contexts = self.context[idx]  ## selected contexts
+            if self.stage == "test":
+                answer = self.answer[idx]
 
             res = {}
             for doc_id, context in enumerate(contexts):
@@ -219,7 +217,8 @@ class ReaderDataset(Dataset):
                     chunk_res = {}
                     chunk_res["input_ids"] = chunk
                     chunk_res["attention_mask"] = encoding["attention_mask"][chunk_idx]
+                    chunk_res["answer_text"] = answer["text"][0]
                     doc_res[chunk_idx] = chunk_res
                 res[doc_id] = doc_res
-        
+
         return res

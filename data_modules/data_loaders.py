@@ -179,7 +179,7 @@ class ReaderDataLoader(pl.LightningDataModule):
         elif stage == "test":
             self.test_dataset = ReaderDataset(
                 question=self.test_data["question"],
-                context=self.test_data["context"],
+                context=self.selected_contexts,
                 answer=self.test_data["answers"],
                 tokenizer=self.tokenizer,
                 max_len=self.max_len,
@@ -201,7 +201,7 @@ class ReaderDataLoader(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size)
-    
+
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.batch_size)
 
