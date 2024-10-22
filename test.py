@@ -16,7 +16,10 @@ from models.model import ReaderModel, RetrievalModel
 
 def main(arg):
     index_file_path = arg.index_file_path
-    model_path = arg.model_path
+    retrieval_model_path = arg.retrieval_model_path
+    retrieval_file_path = arg.retrieval_file_path
+    reader_model_path = arg.reader_model_path
+    reader_file_path = arg.reader_file_path
     data_path = arg.data_path
     context_path = arg.context_path
 
@@ -42,26 +45,26 @@ def main(arg):
     wandb.login()
 
     run = wandb.init()
-    artifact = run.use_artifact(model_path)
+    artifact = run.use_artifact(retrieval_model_path)
     model_dir = artifact.download()
 
     with open(f"{model_dir}/config_retrieval.json", "r") as f:
         config = json.load(f)
 
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
     dataloader = RetrievalDataLoader(
         tokenizer=tokenizer,
-        q_max_length=config["question_max_length"],
-        c_max_length=config["context_max_length"],
-        stride=config["context_stride"],
+        q_max_length=config["QUESTION_MAX_LEN"],
+        c_max_length=config["CONTEXT_MAX_LEN"],
+        stride=config["CONTEXT_STRIDE"],
         predict_data=valid_dataset,
         contexts=contexts,
-        batch_size=config["batch_size"],
-        negative_length=config["negative_length"],
+        batch_size=config["BATCH_SIZE"],
+        negative_length=config["NEGATIVE_LENGTH"],
     )
     retrieval = RetrievalModel(dict(config))
-    checkpoint = torch.load(f"{model_dir}/{model_path}")
-    retrieval.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint = torch.load(f"{model_dir}/{retrieval_file_path}")
+    retrieval.load_state_dict(checkpoint["state_dict"])
 
     retrieval.index = index
     # logger.info("Retrieval model index set.")
@@ -75,24 +78,24 @@ def main(arg):
     # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
     run = wandb.init()
-    artifact = run.use_artifact(model_path)
+    artifact = run.use_artifact(reader_model_path)
     model_dir = artifact.download()
 
-    with open(f"{model_dir}/config_retrieval.json", "r") as f:
+    with open(f"{model_dir}/config_reader.json", "r") as f:
         config = json.load(f)
 
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
     dataloader = ReaderDataLoader(
         tokenizer=tokenizer,
-        max_len=config["max_length"],
-        stride=config["stride"],
+        max_len=config["MAX_LEN"],
+        stride=config["STRIDE"],
         test_data=valid_dataset,
         selected_contexts=selected_contexts,
-        batch_size=config["batch_size"],
+        batch_size=config["BATCH_SIZE"],
     )
     reader = ReaderModel(dict(config))
-    checkpoint = torch.load(f"{model_dir}/{model_path}")
-    reader.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint = torch.load(f"{model_dir}/{reader_file_path}")
+    reader.load_state_dict(checkpoint["state_dict"])
 
     reader_outputs = trainer.test(reader, datamodule=dataloader)
 
@@ -102,28 +105,49 @@ if __name__ == "__main__":
     args.add_argument(
         "-i",
         "--index_file_path",
-        default=None,
+        default="./saved/embeddings/context_index.faiss",
         type=str,
         help="file path for faiss index (default: None)",
     )
     args.add_argument(
-        "-m",
-        "--model_path",
+        "-tm",
+        "--retrieval_model_path",
         default=None,
         type=str,
         help="artifact path for a model (default: None)",
     )
     args.add_argument(
+        "-dm",
+        "--reader_model_path",
+        default=None,
+        type=str,
+        help="artifact path for a model (default: None)",
+    )
+    args.add_argument(
+        "-tf",
+        "--retrieval_file_path",
+        default=None,
+        type=str,
+        help="checkpoint file path for a model (default: None)",
+    )
+    args.add_argument(
+        "-df",
+        "--reader_file_path",
+        default=None,
+        type=str,
+        help="checkpoint file path for a model (default: None)",
+    )
+    args.add_argument(
         "-d",
         "--data_path",
-        default=None,
+        default="./data/train_dataset/",
         type=str,
         help="directory path for datasets (default: None)",
     )
     args.add_argument(
         "-c",
         "--context_path",
-        default=None,
+        default="./data/wikipedia_documents.json",
         type=str,
         help="directory path for contexts (default: None)",
     )
