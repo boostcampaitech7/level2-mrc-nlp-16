@@ -7,13 +7,12 @@ from transformers import AutoTokenizer
 
 
 def main(arg):
-    context_path = arg.context_path
     model_name = arg.model_name
-    contexts_embedding_path = arg.contexts_embedding_path
     k = arg.k
     b = arg.b
     epsilon = arg.epsilon
 
+    context_path = "data/wikipedia_documents.json"
     with open(context_path, "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
@@ -22,31 +21,18 @@ def main(arg):
     tokenized_contexts = [tokenizer.tokenize(context) for context in contexts.values()]
     bm25 = BM25Okapi(
         tokenized_contexts,
-        k=k,
+        k1=k,
         b=b,
         epsilon=epsilon,
     )
 
+    contexts_embedding_path = "data/embedding/context_sparse_embedding.bin"
     with open(contexts_embedding_path, "wb") as file:
         pickle.dump(bm25, file)
 
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
-    args.add_argument(
-        "-c",
-        "--context_path",
-        default=None,
-        type=str,
-        help="directory path for contexts (default: None)",
-    )
-    args.add_argument(
-        "-ce",
-        "--contecontexts_embedding_path",
-        default=None,
-        type=str,
-        help="directory path for context embedding (default: None)",
-    )
     args.add_argument(
         "-m",
         "--model_name",
