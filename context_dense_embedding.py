@@ -65,8 +65,8 @@ if __name__ == "__main__":
     )
     args.add_argument(
         "-ce",
-        "--contecontexts_embedding_path",
-        default=None,
+        "--contexts_embedding_path",
+        default="./saved/embeddings/context_dense_index.faiss",
         type=str,
         help="directory path for context embedding (default: None)",
     )
