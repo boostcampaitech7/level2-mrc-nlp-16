@@ -14,6 +14,7 @@ from utils.embedding import context_embedding
 
 def main(arg):
     model_path = arg.model_path
+    model_name = arg.model_name
     batch_size = arg.batch_size
 
     context_path = "data/wikipedia_documents.json"
@@ -31,16 +32,16 @@ def main(arg):
     with open(f"{model_dir}/config_retrieval.json", "r") as f:
         config = json.load(f)
 
-    tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
     retrieval = RetrievalModel(dict(config))
-    checkpoint = torch.load(f"{model_dir}/{model_path}")
-    retrieval.load_state_dict(checkpoint["model_state_dict"])
+    checkpoint = torch.load(f"{model_dir}/{model_name}")
+    retrieval.load_state_dict(checkpoint["state_dict"])
 
     context_dataset = ContextDataset(
         context=list(contexts.values()),
         document_id=list(contexts.keys()),
         tokenizer=tokenizer,
-        max_length=config["context_max_length"],
+        max_length=config["CONTEXT_MAX_LEN"],
     )
 
     contexts_emb = context_embedding(contextdataset=context_dataset, retrieval=retrieval, batch_size=batch_size)
@@ -53,11 +54,18 @@ def main(arg):
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument(
-        "-m",
+        "-mp",
         "--model_path",
         default=None,
         type=str,
         help="artifact path for a model (default: None)",
+    )
+    args.add_argument(
+        "-mn",
+        "--model_name",
+        default=None,
+        type=str,
+        help="model name in artifact (default: None)",
     )
     args.add_argument(
         "-b",
