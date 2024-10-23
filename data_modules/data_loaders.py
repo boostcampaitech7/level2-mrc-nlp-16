@@ -186,6 +186,7 @@ class ReaderDataLoader(pl.LightningDataModule):
             self.predict_dataset = ReaderDataset(
                 question=self.predict_data["question"],
                 context=self.selected_contexts,
+                question_id=self.predict_data["id"],
                 tokenizer=self.tokenizer,
                 max_len=self.max_len,
                 stride=self.stride,
