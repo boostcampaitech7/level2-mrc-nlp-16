@@ -44,7 +44,6 @@ class RetrievalDataLoader(pl.LightningDataModule):
                 tokenizer=self.tokenizer,
                 q_max_length=self.q_max_length,
                 c_max_length=self.c_max_length,
-                stride=self.stride,
                 stage=stage,
                 truncation=self.truncation,
                 negative_length=self.negative_length,
@@ -56,7 +55,6 @@ class RetrievalDataLoader(pl.LightningDataModule):
                 tokenizer=self.tokenizer,
                 q_max_length=self.q_max_length,
                 c_max_length=self.c_max_length,
-                stride=self.stride,
                 stage=stage,
                 truncation=self.truncation,
                 negative_length=self.negative_length,
@@ -68,18 +66,15 @@ class RetrievalDataLoader(pl.LightningDataModule):
                 tokenizer=self.tokenizer,
                 q_max_length=self.q_max_length,
                 c_max_length=None,
-                stride=self.stride,
                 stage=stage,
                 truncation=self.truncation,
             )
         elif stage == "predict":
             self.predict_dataset = RetrievalDataset(
                 question=self.predict_data["question"],
-                question_id=self.predict_data["id"],
                 tokenizer=self.tokenizer,
                 q_max_length=self.q_max_length,
                 c_max_length=None,
-                stride=self.stride,
                 stage=stage,
                 truncation=self.truncation,
             )
