@@ -34,6 +34,20 @@ def main(arg):
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument(
+        "-c",
+        "--context_path",
+        default="./data/wikipedia_documents.json",
+        type=str,
+        help="directory path for contexts (default: None)",
+    )
+    args.add_argument(
+        "-ce",
+        "--contexts_embedding_path",
+        default="./saved/embeddings/context_sparse_index.pickle",
+        type=str,
+        help="directory path for context embedding (default: None)",
+    )
+    args.add_argument(
         "-m",
         "--model_name",
         default=None,
