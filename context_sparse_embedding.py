@@ -22,7 +22,7 @@ def main(arg):
     tokenized_contexts = [tokenizer.tokenize(context) for context in contexts.values()]
     bm25 = BM25Okapi(
         tokenized_contexts,
-        k=k,
+        k1=k,
         b=b,
         epsilon=epsilon,
     )
@@ -36,14 +36,14 @@ if __name__ == "__main__":
     args.add_argument(
         "-c",
         "--context_path",
-        default=None,
+        default="./data/wikipedia_documents.json",
         type=str,
         help="directory path for contexts (default: None)",
     )
     args.add_argument(
         "-ce",
-        "--contecontexts_embedding_path",
-        default=None,
+        "--contexts_embedding_path",
+        default="./saved/embeddings/context_sparse_index.pickle",
         type=str,
         help="directory path for context embedding (default: None)",
     )
