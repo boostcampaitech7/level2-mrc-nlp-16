@@ -120,14 +120,14 @@ if __name__ == "__main__":
     args.add_argument(
         "-d",
         "--data_path",
-        default=None,
+        default="data/test_dataset",
         type=str,
         help="directory path for datasets (default: None)",
     )
     args.add_argument(
         "-c",
-        "--context_path",
-        default=None,
+        "--contexts_path",
+        default="data/wikipedia_documents.json",
         type=str,
         help="directory path for contexts (default: None)",
     )
