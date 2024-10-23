@@ -17,8 +17,8 @@ def collate_fn(batch):
     }
 
 
-def context_embedding(contextdataset, retrieval):
-    contextloader = DataLoader(contextdataset, batch_size=16)
+def context_embedding(contextdataset, retrieval, batch_size=2):
+    contextloader = DataLoader(contextdataset, batch_size)
 
     mod = retrieval.mod_c.to("cuda")
     mod.eval()
