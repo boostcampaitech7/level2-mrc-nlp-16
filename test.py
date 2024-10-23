@@ -92,6 +92,12 @@ def main(arg):
     sims = w * sims_dense + (1 - w) * sims_sparse
     selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]
     selected_contexts = [[contexts[idx] for idx in row] for row in selected_doc_ids]
+
+    topk_match = np.any(np.equal(selected_doc_ids, np.array(valid_dataset["document_id"])[:, np.newaxis]), axis=1)
+    topk_match_ratio = sum(topk_match) / len(topk_match)
+    print("\n\n********************************************************************\n")
+    print(f"Top K match ratio for the hybrid model : {topk_match_ratio}")
+    print("\n********************************************************************\n\n")
     # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
     run = wandb.init()
