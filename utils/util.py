@@ -27,3 +27,9 @@ def set_seed(SEED, DETERMINISTIC=False):
 
 def normalize_rows(X):
     return X / np.linalg.norm(X, axis=1, keepdims=True)
+
+
+def zero_one_normalize_rows(X):
+    min_by_rows = X.min(axis=1, keepdims=True)
+    max_by_rows = X.max(axis=1, keepdims=True)
+    return (X - min_by_rows) / (max_by_rows - min_by_rows)

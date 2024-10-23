@@ -15,7 +15,7 @@ import wandb
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
 from data_modules.data_sets import ReaderDataset
 from models.model import ReaderModel, RetrievalModel
-from utils.util import normalize_rows
+from utils.util import normalize_rows, zero_one_normalize_rows
 
 
 def main(arg):
@@ -87,7 +87,7 @@ def main(arg):
         sims_sparse.append(scores)
         del scores, tokenized_question
     sims_sparse = np.vstack(sims_sparse)
-    sims_sparse = normalize_rows(sims_sparse)
+    sims_sparse = zero_one_normalize_rows(sims_sparse)
 
     sims = w * sims_dense + (1 - w) * sims_sparse
     selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]
