@@ -20,31 +20,31 @@ from utils.util import normalize_rows
 
 def main(arg):
     retrieval_model_path = arg.retrieval_model_path
-    retrieval_file_path = arg.retrieval_file_path
+    retrieval_model_name = arg.retrieval_model_name
     reader_model_path = arg.reader_model_path
-    reader_file_path = arg.reader_file_path
-    data_path = arg.data_path
-    context_path = arg.context_path
-    contexts_dense_embedding_path = arg.contexts_dense_embedding_path
-    contexts_sparse_embedding_path = arg.contexts_sparse_embedding_path
+    reader_model_name = arg.reader_model_name
     k = arg.k
     w = arg.w
 
     # 데이터셋 로드
+    data_path = "data/train_dataset"
     dataset = load_from_disk(data_path)
     valid_dataset = dataset["validation"]
     # logger.info("Datasets loaded.")
 
-    with open(context_path, "r", encoding="utf-8") as f:
+    contexts_path = "data/wikipedia_documents.json"
+    with open(contexts_path, "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
     # logger.info("Contexts loaded.")
 
+    contexts_dense_embedding_path = "data/embedding/context_dense_embedding.bin"
     with open(contexts_dense_embedding_path, "rb") as f:
         contexts_dense_embedding = pickle.load(f)
     contexts_dense_embedding = np.array(contexts_dense_embedding)
     contexts_dense_embedding = normalize_rows(contexts_dense_embedding)
 
+    contexts_sparse_embedding_path = "data/embedding/context_sparse_embedding.bin"
     with open(contexts_sparse_embedding_path, "rb") as f:
         bm25 = pickle.load(f)
 
@@ -70,13 +70,14 @@ def main(arg):
         negative_length=config["NEGATIVE_LENGTH"],
     )
     retrieval = RetrievalModel(dict(config))
-    checkpoint = torch.load(f"{model_dir}/{retrieval_file_path}")
+    checkpoint = torch.load(f"{model_dir}/{retrieval_model_name}")
     retrieval.load_state_dict(checkpoint["state_dict"])
 
     retrieval.c_emb = contexts_dense_embedding
 
     trainer = pl.Trainer(accelerator="gpu")
     sims_dense = trainer.predict(retrieval, datamodule=dataloader)
+    sims_dense = np.concatenate(sims_dense, axis=0)
     # logger.info("Retrieval model predictions completed.")
 
     sims_sparse = []
@@ -86,10 +87,11 @@ def main(arg):
         sims_sparse.append(scores)
         del scores, tokenized_question
     sims_sparse = np.vstack(sims_sparse)
+    sims_sparse = normalize_rows(sims_sparse)
 
     sims = w * sims_dense + (1 - w) * sims_sparse
-    selected_doc_ids = np.argpartition(sims, -k, axis=1)[-k:]
-    selected_contexts = [contexts[idx] for idx in selected_doc_ids]
+    selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]
+    selected_contexts = [[contexts[idx] for idx in row] for row in selected_doc_ids]
     # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
     run = wandb.init()
@@ -109,7 +111,7 @@ def main(arg):
         batch_size=config["BATCH_SIZE"],
     )
     reader = ReaderModel(dict(config))
-    checkpoint = torch.load(f"{model_dir}/{reader_file_path}")
+    checkpoint = torch.load(f"{model_dir}/{reader_model_name}")
     reader.load_state_dict(checkpoint["state_dict"])
 
     reader_outputs = trainer.test(reader, datamodule=dataloader)
@@ -118,65 +120,37 @@ def main(arg):
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument(
-        "-cdp",
-        "--contexts_dense_embedding_path",
-        default="./saved/embeddings/context_dense_index.faiss",
-        type=str,
-        help="file path for context dense embedding (default: None)",
-    )
-    args.add_argument(
-        "-csp",
-        "--contexts_sparse_embedding_path",
-        default="./saved/embeddings/context_sparse_index.pickle",
-        type=str,
-        help="file path for context sparse embedding (default: None)",
-    )
-    args.add_argument(
-        "-tm",
+        "-rtmp",
         "--retrieval_model_path",
         default=None,
         type=str,
-        help="artifact path for a model (default: None)",
+        help="artifact path for a retrieval model (default: None)",
     )
     args.add_argument(
-        "-dm",
+        "-rtmn",
+        "--retrieval_model_name",
+        default=None,
+        type=str,
+        help="retrieval model name in artifact (default: None)",
+    )
+    args.add_argument(
+        "-rdmp",
         "--reader_model_path",
         default=None,
         type=str,
-        help="artifact path for a model (default: None)",
+        help="artifact path for a reader model (default: None)",
     )
     args.add_argument(
-        "-tf",
-        "--retrieval_file_path",
+        "-rdmn",
+        "--reader_model_name",
         default=None,
         type=str,
-        help="checkpoint file path for a model (default: None)",
-    )
-    args.add_argument(
-        "-df",
-        "--reader_file_path",
-        default=None,
-        type=str,
-        help="checkpoint file path for a model (default: None)",
-    )
-    args.add_argument(
-        "-d",
-        "--data_path",
-        default="./data/train_dataset/",
-        type=str,
-        help="directory path for datasets (default: None)",
-    )
-    args.add_argument(
-        "-c",
-        "--context_path",
-        default="./data/wikipedia_documents.json",
-        type=str,
-        help="directory path for contexts (default: None)",
+        help="reader model name in artifact (default: None)",
     )
     args.add_argument(
         "-k",
         "--k",
-        default=10,
+        default=5,
         type=int,
         help="number of selected contexts (default: 10)",
     )
