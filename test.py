@@ -1,27 +1,34 @@
 import argparse
 import json
 import os
+import pickle
 
 import faiss
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from datasets import load_from_disk
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import wandb
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
 from data_modules.data_sets import ReaderDataset
 from models.model import ReaderModel, RetrievalModel
+from utils.util import normalize_rows
 
 
 def main(arg):
-    index_file_path = arg.index_file_path
     retrieval_model_path = arg.retrieval_model_path
     retrieval_file_path = arg.retrieval_file_path
     reader_model_path = arg.reader_model_path
     reader_file_path = arg.reader_file_path
     data_path = arg.data_path
     context_path = arg.context_path
+    contexts_dense_embedding_path = arg.contexts_dense_embedding_path
+    contexts_sparse_embedding_path = arg.contexts_sparse_embedding_path
+    k = arg.k
+    w = arg.w
 
     # 데이터셋 로드
     dataset = load_from_disk(data_path)
@@ -33,13 +40,13 @@ def main(arg):
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
     # logger.info("Contexts loaded.")
 
-    # faiss 인덱스를 불러와 valid data의 query에 대한 top k passages 출력
-    assert os.path.isfile(index_file_path), "No FAISS index file exists."
-    index = faiss.read_index(index_file_path)
+    with open(contexts_dense_embedding_path, "rb") as f:
+        contexts_dense_embedding = pickle.load(f)
+    contexts_dense_embedding = np.array(contexts_dense_embedding)
+    contexts_dense_embedding = normalize_rows(contexts_dense_embedding)
 
-    sgr = faiss.StandardGpuResources()
-    index = faiss.index_cpu_to_gpu(sgr, 0, index)
-    # logger.info("FAISS index loaded.")
+    with open(contexts_sparse_embedding_path, "rb") as f:
+        bm25 = pickle.load(f)
 
     ## model/config loading
     wandb.login()
@@ -66,15 +73,23 @@ def main(arg):
     checkpoint = torch.load(f"{model_dir}/{retrieval_file_path}")
     retrieval.load_state_dict(checkpoint["state_dict"])
 
-    retrieval.index = index
-    # logger.info("Retrieval model index set.")
+    retrieval.c_emb = contexts_dense_embedding
 
     trainer = pl.Trainer(accelerator="gpu")
-    selected_doc_ids = trainer.predict(retrieval, datamodule=dataloader)
+    sims_dense = trainer.predict(retrieval, datamodule=dataloader)
     # logger.info("Retrieval model predictions completed.")
 
-    # 리더 예측 준비
-    selected_contexts = [contexts[idx.item()] for batch in selected_doc_ids for idx in batch]
+    sims_sparse = []
+    for question in tqdm(valid_dataset["question"], desc="sparse embedding similarity"):
+        tokenized_question = tokenizer.tokenize(question)
+        scores = bm25.get_scores(tokenized_question)
+        sims_sparse.append(scores)
+        del scores, tokenized_question
+    sims_sparse = np.vstack(sims_sparse)
+
+    sims = w * sims_dense + (1 - w) * sims_sparse
+    selected_doc_ids = np.argpartition(sims, -k, axis=1)[-k:]
+    selected_contexts = [contexts[idx] for idx in selected_doc_ids]
     # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
     run = wandb.init()
@@ -103,11 +118,18 @@ def main(arg):
 if __name__ == "__main__":
     args = argparse.ArgumentParser()
     args.add_argument(
-        "-i",
-        "--index_file_path",
-        default="./saved/embeddings/context_index.faiss",
+        "-cdp",
+        "--contexts_dense_embedding_path",
+        default=None,
         type=str,
-        help="file path for faiss index (default: None)",
+        help="file path for context dense embedding (default: None)",
+    )
+    args.add_argument(
+        "-csp",
+        "--contexts_sparse_embedding_path",
+        default=None,
+        type=str,
+        help="file path for context sparse embedding (default: None)",
     )
     args.add_argument(
         "-tm",
@@ -150,6 +172,20 @@ if __name__ == "__main__":
         default="./data/wikipedia_documents.json",
         type=str,
         help="directory path for contexts (default: None)",
+    )
+    args.add_argument(
+        "-k",
+        "--k",
+        default=10,
+        type=int,
+        help="number of selected contexts (default: 10)",
+    )
+    args.add_argument(
+        "-w",
+        "--w",
+        default=0.5,
+        type=float,
+        help="weight for dense embedding in hybrid model (default: 0.5)",
     )
 
     arg = args.parse_args()
