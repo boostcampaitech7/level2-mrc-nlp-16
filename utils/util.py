@@ -23,3 +23,7 @@ def set_seed(SEED, DETERMINISTIC=False):
     if DETERMINISTIC:  # cudnn random seed 고정 - 고정 시 학습 속도가 느려질 수 있습니다.
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+
+def normalize_rows(X):
+    return X / np.linalg.norm(X, axis=1, keepdims=True)
