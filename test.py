@@ -88,7 +88,6 @@ def main(arg):
         del scores, tokenized_question
     sims_sparse = np.vstack(sims_sparse)
     sims_sparse = zero_one_normalize_rows(sims_sparse)
-    sims_sparse = normalize_rows(sims_sparse)
 
     sims = w * sims_dense + (1 - w) * sims_sparse
     selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]

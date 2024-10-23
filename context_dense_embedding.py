@@ -42,7 +42,6 @@ def main(arg):
         document_id=list(contexts.keys()),
         tokenizer=tokenizer,
         max_length=config["CONTEXT_MAX_LEN"],
-        max_length=config["CONTEXT_MAX_LEN"],
     )
 
     contexts_emb = context_embedding(contextdataset=context_dataset, retrieval=retrieval, batch_size=batch_size)
