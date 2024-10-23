@@ -132,7 +132,12 @@ merged_contexts = {str(k): v for k, v in merged_contexts.items()}
 # 3. 결과 저장
 # 새로운 contexts 저장
 with open("data/wikipedia_documents_extended.json", "w", encoding="utf-8") as f:
-    json_contexts = {k: {"document_id": k, "text": v} for k, v in merged_contexts.items()}
+    json_contexts = {
+        str(k): {
+            "document_id": int(k),  # document_id는 정수형으로 저장
+            "text": v
+        } for k, v in merged_contexts.items()
+    }
     json.dump(json_contexts, f, ensure_ascii=False, indent=4)
 
 # with open("data/wikipedia_documents_extended.json", "w", encoding="utf-8") as f:
