@@ -63,7 +63,7 @@ def main(arg):
         tokenizer=tokenizer,
         q_max_length=config["QUESTION_MAX_LEN"],
         c_max_length=config["CONTEXT_MAX_LEN"],
-        stride=config["conteCONTEXT_STRIDExt_stride"],
+        stride=config["CONTEXT_STRIDE"],
         predict_data=predict_dataset,
         contexts=contexts,
         batch_size=config["BATCH_SIZE"],
@@ -71,7 +71,7 @@ def main(arg):
     )
     retrieval = RetrievalModel(dict(config))
     checkpoint = torch.load(f"{model_dir}/{retrieval_model_name}")
-    retrieval.load_state_dict(checkpoint["model_state_dict"])
+    retrieval.load_state_dict(checkpoint["state_dict"])
 
     retrieval.c_emb = contexts_dense_embedding
 
@@ -98,7 +98,7 @@ def main(arg):
     artifact = run.use_artifact(reader_model_path)
     model_dir = artifact.download()
 
-    with open(f"{model_dir}/config_retrieval.json", "r") as f:
+    with open(f"{model_dir}/config_reader.json", "r") as f:
         config = json.load(f)
 
     tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
@@ -112,13 +112,13 @@ def main(arg):
     )
     reader = ReaderModel(dict(config))
     checkpoint = torch.load(f"{model_dir}/{reader_model_name}")
-    reader.load_state_dict(checkpoint["model_state_dict"])
+    reader.load_state_dict(checkpoint["state_dict"])
 
     reader_outputs = trainer.predict(reader, datamodule=dataloader)
     reader_outputs = {k: v for k, v in reader_outputs}
 
-    with open("data/submission.json", "w") as f:
-        json.dump(reader_outputs, f, indent=4)
+    with open("data/submission.json", "w", encoding="utf-8") as f:
+        json.dump(reader_outputs, f, indent=4, ensure_ascii=False)
 
 
 if __name__ == "__main__":
