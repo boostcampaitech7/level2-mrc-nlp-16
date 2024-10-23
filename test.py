@@ -120,14 +120,14 @@ if __name__ == "__main__":
     args.add_argument(
         "-cdp",
         "--contexts_dense_embedding_path",
-        default=None,
+        default="./saved/embeddings/context_dense_index.faiss",
         type=str,
         help="file path for context dense embedding (default: None)",
     )
     args.add_argument(
         "-csp",
         "--contexts_sparse_embedding_path",
-        default=None,
+        default="./saved/embeddings/context_sparse_index.pickle",
         type=str,
         help="file path for context sparse embedding (default: None)",
     )
