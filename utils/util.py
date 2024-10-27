@@ -26,10 +26,10 @@ def set_seed(SEED, DETERMINISTIC=False):
 
 
 def normalize_rows(X):
-    return X / np.linalg.norm(X, axis=1, keepdims=True)
+    return X / np.linalg.norm(X, axis=1, keepdims=True) ## numpy array를 행별로 표준화
 
 
-def zero_one_normalize_rows(X):
+def zero_one_normalize_rows(X): ## numpy array에 대한 행별 0-1 표준화
     min_by_rows = X.min(axis=1, keepdims=True)
     max_by_rows = X.max(axis=1, keepdims=True)
     return (X - min_by_rows) / (max_by_rows - min_by_rows)
