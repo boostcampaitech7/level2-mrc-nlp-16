@@ -1,4 +1,5 @@
-## 새 가상환경으로 실행 권고
+## 기존 실험 환경과의 충돌
+## back_translation_augmentation시 별도의 환경 구축 필요
 torch==1.6.0
 torchvision==0.7.0
 pillow>=4.1.1
