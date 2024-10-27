@@ -6,12 +6,30 @@ from data_modules.data_sets import ReaderDataset, RetrievalDataset
 
 
 class RetrievalDataLoader(pl.LightningDataModule):
+    """
+    retrieval model의 input 형태로 데이터를 처리 및 로드
+
+    train, validation, test, predict 데이터셋을 관리하고,
+    분석의 각 단계에 맞는 데이터로더를 제공
+    Args:
+        tokenizer: 문장을 토큰화하는 토크나이저
+        q_max_length (int): question에 대한 최대 시퀀스 길이
+        c_max_length (int): context에 대한 최대 시퀀스 길이
+        train_data (List[str]): 학습 데이터
+        val_data (List[str]): 검증 데이터
+        test_data (List[str]): 평가 데이터
+        predict_data (List[str]): 추론 대상 데이터
+        contexts (List[str]): 전체 context 데이터
+        truncation (bool, optional): 문장 절단 여부
+        batch_size (int): 배치 크기
+        negative_length (int): 학습 과정에서 활용할 negative sample 수 
+    """
     def __init__(
         self,
         tokenizer,
         q_max_length,
         c_max_length,
-        stride,
+        stride,   ## 지워야 함
         train_data=None,
         val_data=None,
         test_data=None,
@@ -85,7 +103,6 @@ class RetrievalDataLoader(pl.LightningDataModule):
 
         c_inputs = torch.cat([item["positive_context"]["input_ids"] for item in batch])
         c_masks = torch.cat([item["positive_context"]["attention_mask"] for item in batch])
-        # c_overflow = torch.cat([item["positive_context"]["overflow"]+idx for idx, item in enumerate(batch)]) ## dataset에서 문장 별로 tokenization적용하기 때문에, overflow가 0이 되는 문제 발생함 ## batch내의 각 문장 별로 index를 다르게 더해줌으로써 overflow 구현
 
         nc_inputs = [
             torch.cat([item["negative_context"][i]["input_ids"] for item in batch]) for i in range(self.negative_length)
@@ -94,20 +111,17 @@ class RetrievalDataLoader(pl.LightningDataModule):
             torch.cat([item["negative_context"][i]["attention_mask"] for item in batch])
             for i in range(self.negative_length)
         ]
-        # nc_overflow = [torch.cat([item["negative_context"][i]["overflow"]+idx for idx, item in enumerate(batch)]) for i in range(self.negative_length)]
 
         return {
             "question": {"input_ids": q_inputs, "attention_mask": q_masks},
             "positive_context": {
                 "input_ids": c_inputs,
                 "attention_mask": c_masks,
-                # "overflow": c_overflow
             },
             "negative_context": {
                 i: {
                     "input_ids": nc_inputs[i],
                     "attention_mask": nc_masks[i],
-                    # "overflow": nc_overflow[i]
                 }
                 for i in range(self.negative_length)
             },
@@ -127,11 +141,27 @@ class RetrievalDataLoader(pl.LightningDataModule):
 
 
 class ReaderDataLoader(pl.LightningDataModule):
+    """
+    reader model의 input 형태로 데이터를 처리 및 로드
+
+    train, validation, test, predict 데이터셋을 관리하고,
+    분석의 각 단계에 맞는 데이터로더를 제공
+    Args:
+        tokenizer: 문장을 토큰화하는 토크나이저
+        max_len (int): 최대 시퀀스 길이
+        train_data (List[str]): 학습 데이터
+        val_data (List[str]): 검증 데이터
+        test_data (List[str]): 평가 데이터
+        predict_data (List[str]): 추론 대상 데이터
+        selected_contexts (List[str]): retrieval을 통해 선택된 contexts
+        truncation (bool, optional): 문장 절단 여부
+        batch_size (int): 배치 크기
+    """
     def __init__(
         self,
         tokenizer,
         max_len,
-        stride,
+        stride,   ## 지워야 함
         train_data=None,
         val_data=None,
         test_data=None,
