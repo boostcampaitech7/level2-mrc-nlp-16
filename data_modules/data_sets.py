@@ -5,6 +5,22 @@ from torch.utils.data import Dataset
 
 
 class RetrievalDataset(Dataset):
+    """
+    retrieval model 입력 데이터셋 클래스
+
+    question과 context를 포함하고 있고,
+    fit, test, predict 각 step에 맞춰 negative samplig 등을 통해
+    적절한 형태의 데이터를 반환함
+    Args:
+        question (List[str]): 질문
+        contexts (List[str]): 정답이 포함된 문맥
+        q_max_length (int): 질문 text의 max length
+        c_max_length (int): 문맥 text의 max length
+        stage (str): 학습, 평가, 추론 중 어느 단계인지 표현
+        tokenizer: 문장을 토큰화하기 위한 토크나이저
+        truncation (bool, optional): 토큰화 시 문장 절단 여부
+        negative_length (int): 학습 과정에서 활용할 negative sample 수
+    """
     def __init__(
         self,
         question,
@@ -94,6 +110,16 @@ class RetrievalDataset(Dataset):
 
 
 class ContextDataset(Dataset):
+    """
+    전체 context embedding 과정에서 활용될 데이터셋 클래스
+    context를 batch 단위로 구분하여 반환
+
+    Args:
+        context (List[str]): 문맥
+        max_length (int): 최대 토큰 길이
+        tokenizer: 문장을 토큰화하기 위한 토크나이저
+        truncation (bool, optional): 토큰화 시 문장 절단 여부
+    """
     def __init__(self, context, document_id, tokenizer, max_length, truncation=True):
         self.context = context
         self.document_id = document_id
@@ -124,6 +150,22 @@ class ContextDataset(Dataset):
 
 
 class ReaderDataset(Dataset):
+    """
+    reader model 입력 데이터셋 클래스
+
+    question과 context, answer를 포함하고 있고,
+    question, context에 대한 토큰화와 더불어
+    answer start index, answer text를 통해 적절한 레이블을 생성함
+    Args:
+        question (List[str]): 질문
+        question_id (List[str]): 질문의 id (inference output에 대한 indexing 목적)
+        contexts (List[str]): 정답이 포함된 문맥 (test, predict step에서는 retrieval에서 선택된 context가 입력됨)
+        answer (List[Dict["start index": int, "answer text": str]]): 정답에 대한 정보
+        max_len (int): 질문과 context의 concat에 대한 max length
+        stride (int): text의 chunk를 나누는 경우, 이전 text와 다음 text간의 겹쳐지는 토큰 수
+        stage (str): 학습, 평가, 추론 중 어느 단계인지 표현
+        tokenizer: 문장을 토큰화하기 위한 토크나이저
+    """
     def __init__(self, question, context, tokenizer, max_len, stride, stage, question_id=None, answer=None):
         self.question = question
         self.context = context
