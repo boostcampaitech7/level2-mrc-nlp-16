@@ -1,4 +1,3 @@
-import faiss
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -8,10 +7,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoModel,
     AutoModelForQuestionAnswering,
-    AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    logging,
-    pipeline,
 )
 
 from models.metric import compute_exact, compute_f1
@@ -19,6 +15,19 @@ from utils.util import normalize_rows
 
 
 class RetrievalModel(pl.LightningModule):
+    """
+    cosine similarity 기반의 question-context retrieval model
+
+    question과 context 각각의 embedding에 대한 cosine similarity와
+    negative sampling을 통한 context embedding에 대한 cosine similarity에
+    Negative Log Likelihood Loss를 적용하여 모델 학습 진행
+    Args:
+        config (dict): model configuration
+    Attributes:
+        mod_q (PeftModel): question에 대한 embedding model
+        mod_c (PeftModel): context에 대한 embedding model
+        criterion (nn.NLLLoss): NLL Loss
+    """
     def __init__(self, config):
         super().__init__()
         self.save_hyperparameters(config)
@@ -50,9 +59,9 @@ class RetrievalModel(pl.LightningModule):
         q_emb = self.mod_q(
             input_ids=question["input_ids"], attention_mask=question["attention_mask"]
         ).last_hidden_state[:, 0, :]
-        c_emb = self.mod_c(input_ids=context["input_ids"], attention_mask=context["attention_mask"]).last_hidden_state[
-            :, 0, :
-        ]
+        c_emb = self.mod_c(
+            input_ids=context["input_ids"], attention_mask=context["attention_mask"]
+        ).last_hidden_state[:, 0, :]
 
         return q_emb, c_emb
 
@@ -63,12 +72,14 @@ class RetrievalModel(pl.LightningModule):
             _, c_emb = self(batch["question"], batch["negative_context"][i])
             c_embs.append(c_emb)
         c_embs = torch.stack(c_embs)
+
         sims = F.cosine_similarity(q_emb.unsqueeze(0), c_embs, dim=2).T
         sims_softmax = F.log_softmax(sims)
 
         targets = torch.zeros(c_embs.shape[1]).long()
         loss = self.criterion(sims_softmax, targets.to("cuda"))
         sim = sims.mean(dim=0)
+
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         self.log("train_similarity", sim[0], on_step=False, on_epoch=True)
         for i in range(self.negative_length):
@@ -85,12 +96,14 @@ class RetrievalModel(pl.LightningModule):
             _, c_emb = self(batch["question"], batch["negative_context"][i])
             c_embs.append(c_emb)
         c_embs = torch.stack(c_embs)
+
         sims = F.cosine_similarity(q_emb.unsqueeze(0), c_embs, dim=2).T
         sims_softmax = F.log_softmax(sims)
 
         targets = torch.zeros(c_embs.shape[1]).long()
         loss = self.criterion(sims_softmax, targets.to("cuda"))
         sim = sims.mean(dim=0)
+
         self.log("validation_loss", loss, on_step=False, on_epoch=True)
         self.log("validation_similarity", sim[0], on_step=False, on_epoch=True)
         for i in range(self.negative_length):
@@ -102,9 +115,9 @@ class RetrievalModel(pl.LightningModule):
             input_ids=batch["question"]["input_ids"].squeeze(),
             attention_mask=batch["question"]["attention_mask"].squeeze(),
         ).last_hidden_state[:, 0, :]
+
         q_emb = q_emb.cpu().detach().numpy().astype("float32")
         q_emb = normalize_rows(q_emb)
-
         sims = np.dot(q_emb, self.c_emb.T).squeeze()
         return sims
 
@@ -113,9 +126,9 @@ class RetrievalModel(pl.LightningModule):
             input_ids=batch["question"]["input_ids"].squeeze(),
             attention_mask=batch["question"]["attention_mask"].squeeze(),
         ).last_hidden_state[:, 0, :]
+
         q_emb = q_emb.cpu().detach().numpy().astype("float32")
         q_emb = normalize_rows(q_emb)
-
         sims = np.dot(q_emb, self.c_emb.T).squeeze()
         return sims
 
@@ -125,10 +138,15 @@ class RetrievalModel(pl.LightningModule):
 
 class ReaderModel(pl.LightningModule):
     """
-    질문에 대한 답변의 시작 및 끝 위치를 예측하는 모델.
+    Extraction based Question Answering(QA) model
 
+    각 토큰 index 별로 start logit과 end logit을 계산하여,
+    최대 확률을 갖는 index 조합을 찾는 방식으로 answer에 대한 추론 진행
     Args:
-        config (dict): 모델 설정을 포함하는 딕셔너리.
+        config (dict): model configuration
+    Attributes:
+        mod (PeftModel): LoRA 적용한 pre-trained 모델
+        criterion (nn.NLLLoss): NLL Loss
     """
 
     def __init__(self, config):
