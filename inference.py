@@ -1,9 +1,7 @@
 import argparse
 import json
-import os
 import pickle
 
-import faiss
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -13,42 +11,43 @@ from transformers import AutoTokenizer
 
 import wandb
 from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
-from data_modules.data_sets import ReaderDataset
 from models.model import ReaderModel, RetrievalModel
 from utils.util import normalize_rows, zero_one_normalize_rows
 
 
 def main(arg):
-    retrieval_model_path = arg.retrieval_model_path
-    retrieval_model_name = arg.retrieval_model_name
-    reader_model_path = arg.reader_model_path
-    reader_model_name = arg.reader_model_name
-    k = arg.k
-    w = arg.w
+    retrieval_model_path = arg.retrieval_model_path  ## wandb artifact 상에 load된 retrieval model path
+    retrieval_model_name = arg.retrieval_model_name  ## wandb artifact 상에 load된 retrieval model name
+    reader_model_path = arg.reader_model_path  ## wandb artifact 상에 load된 reader model path
+    reader_model_name = arg.reader_model_name  ## wandb artifact 상에 load된 reader model name
+    k = arg.k  ## retrieval에서 선택할 문서의 개수
+    w = arg.w  ## hybrid model에서 context embedding similarity에 적용한 weight
 
-    # 데이터셋 로드
+
+    ## load dataset
     data_path = "data/test_dataset"
     dataset = load_from_disk(data_path)
     predict_dataset = dataset["validation"]
-    # logger.info("Datasets loaded.")
 
     contexts_path = "data/wikipedia_documents.json"
     with open(contexts_path, "r", encoding="utf-8") as f:
         contexts = json.load(f)
     contexts = {value["document_id"]: value["text"] for value in contexts.values()}
-    # logger.info("Contexts loaded.")
 
+    ## load embeddings
+    ### dense
     contexts_dense_embedding_path = "data/embedding/context_dense_embedding.bin"
     with open(contexts_dense_embedding_path, "rb") as f:
         contexts_dense_embedding = pickle.load(f)
     contexts_dense_embedding = np.array(contexts_dense_embedding)
     contexts_dense_embedding = normalize_rows(contexts_dense_embedding)
 
+    ### sparse
     contexts_sparse_embedding_path = "data/embedding/context_sparse_embedding.bin"
     with open(contexts_sparse_embedding_path, "rb") as f:
         bm25 = pickle.load(f)
 
-    ## model/config loading
+    ## retrieval model/config loading
     wandb.login()
 
     run = wandb.init()
@@ -73,13 +72,15 @@ def main(arg):
     checkpoint = torch.load(f"{model_dir}/{retrieval_model_name}")
     retrieval.load_state_dict(checkpoint["state_dict"])
 
+    ## dense embedding setting for model predict
     retrieval.c_emb = contexts_dense_embedding
 
+    ## test retrieval
     trainer = pl.Trainer(accelerator="gpu")
     sims_dense = trainer.predict(retrieval, datamodule=dataloader)
     sims_dense = np.concatenate(sims_dense, axis=0)
-    # logger.info("Retrieval model predictions completed.")
 
+    ## output processing
     sims_sparse = []
     for question in tqdm(predict_dataset["question"], desc="sparse embedding similarity"):
         tokenized_question = tokenizer.tokenize(question)
@@ -89,11 +90,14 @@ def main(arg):
     sims_sparse = np.vstack(sims_sparse)
     sims_sparse = zero_one_normalize_rows(sims_sparse)
 
+    ## hybrid model
     sims = w * sims_dense + (1 - w) * sims_sparse
+
+    ## select contexts
     selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]
     selected_contexts = [[contexts[idx] for idx in row] for row in selected_doc_ids]
-    # logger.info(f"Document IDs extracted from retrieval output. Total: {len(doc_id)}")
 
+    ## reader model/config loading
     run = wandb.init()
     artifact = run.use_artifact(reader_model_path)
     model_dir = artifact.download()
@@ -114,9 +118,11 @@ def main(arg):
     checkpoint = torch.load(f"{model_dir}/{reader_model_name}")
     reader.load_state_dict(checkpoint["state_dict"])
 
+    ## test reader
     reader_outputs = trainer.predict(reader, datamodule=dataloader)
     reader_outputs = {k: v for k, v in reader_outputs}
 
+    ## generate submission file
     with open("data/submission.json", "w", encoding="utf-8") as f:
         json.dump(reader_outputs, f, indent=4, ensure_ascii=False)
 
