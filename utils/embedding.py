@@ -2,21 +2,6 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-
-def collate_fn(batch):
-    input_ids = torch.cat([item["input_ids"] for item in batch])
-    attention_mask = torch.cat([item["attention_mask"] for item in batch])
-    overflow = torch.cat([item["overflow"] + idx for idx, item in enumerate(batch)])
-    document = [item["document_id"] for item in batch]  ## context의 모든 chunk를 저장하기 위해 chunk 개수만큼 doc_id 반복
-
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "overflow": overflow,
-        "document_id": document,
-    }
-
-
 def context_embedding(contextdataset, retrieval, batch_size=2):
     contextloader = DataLoader(contextdataset, batch_size)
 
