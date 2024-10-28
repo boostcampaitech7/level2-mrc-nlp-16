@@ -110,3 +110,17 @@ datasets/
 .vscode/
 .idea/
 __MACOSX/
+
+# custom
+artifacts/
+lightning_logs/
+ODQA_project
+wandb/
+
+test.ipynb
+config_reader.json
+config_retrieval.json
+
+# option
+# config_reader.yaml
+# config_retrieval.yaml

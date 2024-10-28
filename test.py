@@ -1,78 +1,176 @@
 import argparse
+import json
+import pickle
 
+import numpy as np
+import pytorch_lightning as pl
 import torch
+from datasets import load_from_disk
 from tqdm import tqdm
+from transformers import AutoTokenizer
 
-import data_loader.data_loaders as module_data
-import model.loss as module_loss
-import model.metric as module_metric
-import model.model as module_arch
-from parse_config import ConfigParser
+import wandb
+from data_modules.data_loaders import ReaderDataLoader, RetrievalDataLoader
+from models.model import ReaderModel, RetrievalModel
+from utils.util import normalize_rows, zero_one_normalize_rows
 
 
-def main(config):
-    logger = config.get_logger("test")
+def main(arg):
+    retrieval_model_path = arg.retrieval_model_path  ## wandb artifact 상에 load된 retrieval model path
+    retrieval_model_name = arg.retrieval_model_name  ## wandb artifact 상에 load된 retrieval model name
+    reader_model_path = arg.reader_model_path  ## wandb artifact 상에 load된 reader model path
+    reader_model_name = arg.reader_model_name  ## wandb artifact 상에 load된 reader model name
+    k = arg.k  ## retrieval에서 선택할 문서의 개수
+    w = arg.w  ## hybrid model에서 context embedding similarity에 적용한 weight
 
-    # setup data_loader instances
-    data_loader = getattr(module_data, config["data_loader"]["type"])(
-        config["data_loader"]["args"]["data_dir"],
-        batch_size=512,
-        shuffle=False,
-        validation_split=0.0,
-        training=False,
-        num_workers=2,
+    ## load dataset
+    data_path = "data/train_dataset"
+    dataset = load_from_disk(data_path)
+    valid_dataset = dataset["validation"]
+
+    contexts_path = "data/wikipedia_documents.json"
+    with open(contexts_path, "r", encoding="utf-8") as f:
+        contexts = json.load(f)
+    contexts = {value["document_id"]: value["text"] for value in contexts.values()}
+
+    ## load embeddings
+    ### dense
+    contexts_dense_embedding_path = "data/embedding/context_dense_embedding.bin"
+    with open(contexts_dense_embedding_path, "rb") as f:
+        contexts_dense_embedding = pickle.load(f)
+    contexts_dense_embedding = np.array(contexts_dense_embedding)
+    contexts_dense_embedding = normalize_rows(contexts_dense_embedding)
+
+    ### sparse
+    contexts_sparse_embedding_path = "data/embedding/context_sparse_embedding.bin"
+    with open(contexts_sparse_embedding_path, "rb") as f:
+        bm25 = pickle.load(f)
+
+    ## retrieval model/config loading
+    wandb.login()
+
+    run = wandb.init()
+    artifact = run.use_artifact(retrieval_model_path)
+    model_dir = artifact.download()
+
+    with open(f"{model_dir}/config_retrieval.json", "r") as f:
+        config = json.load(f)
+
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
+    dataloader = RetrievalDataLoader(
+        tokenizer=tokenizer,
+        q_max_length=config["QUESTION_MAX_LEN"],
+        c_max_length=config["CONTEXT_MAX_LEN"],
+        stride=config["CONTEXT_STRIDE"],
+        predict_data=valid_dataset,
+        contexts=contexts,
+        batch_size=config["BATCH_SIZE"],
+        negative_length=config["NEGATIVE_LENGTH"],
     )
+    retrieval = RetrievalModel(dict(config))
+    checkpoint = torch.load(f"{model_dir}/{retrieval_model_name}")
+    retrieval.load_state_dict(checkpoint["state_dict"])
 
-    # build model architecture
-    model = config.init_obj("arch", module_arch)
-    logger.info(model)
+    ## dense embedding setting for model predict
+    retrieval.c_emb = contexts_dense_embedding
 
-    # get function handles of loss and metrics
-    loss_fn = getattr(module_loss, config["loss"])
-    metric_fns = [getattr(module_metric, met) for met in config["metrics"]]
+    ## test retrieval
+    trainer = pl.Trainer(accelerator="gpu")
+    sims_dense = trainer.predict(retrieval, datamodule=dataloader)
+    sims_dense = np.concatenate(sims_dense, axis=0)
 
-    logger.info("Loading checkpoint: {} ...".format(config.resume))
-    checkpoint = torch.load(config.resume)
-    state_dict = checkpoint["state_dict"]
-    if config["n_gpu"] > 1:
-        model = torch.nn.DataParallel(model)
-    model.load_state_dict(state_dict)
+    ## output processing
+    sims_sparse = []
+    for question in tqdm(valid_dataset["question"], desc="sparse embedding similarity"):
+        tokenized_question = tokenizer.tokenize(question)
+        scores = bm25.get_scores(tokenized_question)
+        sims_sparse.append(scores)
+        del scores, tokenized_question
+    sims_sparse = np.vstack(sims_sparse)
+    sims_sparse = zero_one_normalize_rows(sims_sparse) ## 0-1 normalize for sparse embedding scores
 
-    # prepare model for testing
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    model.eval()
+    ## hybrid model
+    sims = w * sims_dense + (1 - w) * sims_sparse
 
-    total_loss = 0.0
-    total_metrics = torch.zeros(len(metric_fns))
+    ## select contexts
+    selected_doc_ids = np.argpartition(sims, -k, axis=1)[:, -k:]
+    selected_contexts = [[contexts[idx] for idx in row] for row in selected_doc_ids]
 
-    with torch.no_grad():
-        for i, (data, target) in enumerate(tqdm(data_loader)):
-            data, target = data.to(device), target.to(device)
-            output = model(data)
+    topk_match = np.any(np.equal(selected_doc_ids, np.array(valid_dataset["document_id"])[:, np.newaxis]), axis=1)
+    topk_match_ratio = sum(topk_match) / len(topk_match)
+    print("\n\n********************************************************************\n")
+    print(f"Top K match ratio for the hybrid model : {topk_match_ratio}")
+    print("\n********************************************************************\n\n")
 
-            #
-            # save sample images, or do something with output here
-            #
+    ## reader model/config loading
+    run = wandb.init()
+    artifact = run.use_artifact(reader_model_path)
+    model_dir = artifact.download()
 
-            # computing loss, metrics on test set
-            loss = loss_fn(output, target)
-            batch_size = data.shape[0]
-            total_loss += loss.item() * batch_size
-            for i, metric in enumerate(metric_fns):
-                total_metrics[i] += metric(output, target) * batch_size
+    with open(f"{model_dir}/config_reader.json", "r") as f:
+        config = json.load(f)
 
-    n_samples = len(data_loader.sampler)
-    log = {"loss": total_loss / n_samples}
-    log.update({met.__name__: total_metrics[i].item() / n_samples for i, met in enumerate(metric_fns)})
-    logger.info(log)
+    tokenizer = AutoTokenizer.from_pretrained(config["MODEL_NAME"])
+    dataloader = ReaderDataLoader(
+        tokenizer=tokenizer,
+        max_len=config["MAX_LEN"],
+        stride=config["STRIDE"],
+        test_data=valid_dataset,
+        selected_contexts=selected_contexts,
+        batch_size=config["BATCH_SIZE"],
+    )
+    reader = ReaderModel(dict(config))
+    checkpoint = torch.load(f"{model_dir}/{reader_model_name}")
+    reader.load_state_dict(checkpoint["state_dict"])
+
+    ## test reader
+    trainer.test(reader, datamodule=dataloader)
 
 
 if __name__ == "__main__":
-    args = argparse.ArgumentParser(description="PyTorch Template")
-    args.add_argument("-c", "--config", default=None, type=str, help="config file path (default: None)")
-    args.add_argument("-r", "--resume", default=None, type=str, help="path to latest checkpoint (default: None)")
-    args.add_argument("-d", "--device", default=None, type=str, help="indices of GPUs to enable (default: all)")
+    args = argparse.ArgumentParser()
+    args.add_argument(
+        "-rtmp",
+        "--retrieval_model_path",
+        default=None,
+        type=str,
+        help="artifact path for a retrieval model (default: None)",
+    )
+    args.add_argument(
+        "-rtmn",
+        "--retrieval_model_name",
+        default=None,
+        type=str,
+        help="retrieval model name in artifact (default: None)",
+    )
+    args.add_argument(
+        "-rdmp",
+        "--reader_model_path",
+        default=None,
+        type=str,
+        help="artifact path for a reader model (default: None)",
+    )
+    args.add_argument(
+        "-rdmn",
+        "--reader_model_name",
+        default=None,
+        type=str,
+        help="reader model name in artifact (default: None)",
+    )
+    args.add_argument(
+        "-k",
+        "--k",
+        default=5,
+        type=int,
+        help="number of selected contexts (default: 10)",
+    )
+    args.add_argument(
+        "-w",
+        "--w",
+        default=0.5,
+        type=float,
+        help="weight for dense embedding in hybrid model (default: 0.5)",
+    )
 
-    config = ConfigParser.from_args(args)
-    main(config)
+    arg = args.parse_args()
+    main(arg)
