@@ -1,0 +1,10 @@
+datasets
+lightning
+numpy
+pandas
+peft
+rank_bm25
+torch==1.13.1
+tqdm
+transformers
+wandb

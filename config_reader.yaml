@@ -1,0 +1,36 @@
+project: ODQA_project
+name: temp
+program: train_reader.py
+method: random
+metric:
+  name: Exact Match
+  goal: maximize
+parameters:
+  SEED:
+    value: 12345
+  DETERMINISTIC:
+    value: True
+  DATA_PATH:
+    value: './data/train_dataset/'
+  CONTEXTS_PATH:
+    value: './data/wikipedia_documents.json'
+  EPOCHS:
+    value: 20
+  BATCH_SIZE:
+    value: 1
+  LEARNING_RATE:
+    value: 0.0001
+  MAX_LEN:
+    value: 512
+  STRIDE:
+    value: 16
+  MODEL_NAME:
+    value: jhgan/ko-sroberta-multitask
+  MODULE_NAMES:
+    value: ['query', 'key', 'value']
+  LORA_RANK:
+    value: 8
+  LORA_ALPHA:
+    value: 8
+  LORA_DROP_OUT:
+    value: 0.005
