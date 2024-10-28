@@ -220,7 +220,7 @@ python context_sparse_embedding.py -m jhgan/ko-sroberta-multitask
 # -mp : model path (artifact 상의 model path, 하단 첫 번째 이미지 빨간 밑줄)
 # -mn : model name (artifact 상의 model name, 하단 두 번째 이미지 빨간 밑줄)
 # -b : batch size (optional, int)
-python3 context_dense_embedding.py -mp kangjun205/ODQA_project/model-26umrq2s:v0 -mn retrieval_epoch=00.ckpt
+python3 context_dense_embedding.py -mp [model path] -mn [model name]
 ```
 
 ### test.py
@@ -232,7 +232,7 @@ python3 context_dense_embedding.py -mp kangjun205/ODQA_project/model-26umrq2s:v0
 # -rdmn : reader model name (artifact 상의 model name)
 # -k : number of selected contexts (optional, int)
 # -w : weight for dense embedding in hybrid model (optional, float, 0~1)
-python3 test.py -rtmp kangjun205/ODQA_project/model-26umrq2s:v0 -rtmn retrieval_epoch=00.ckpt -rdmp kangjun205/ODQA_project/model-4nlzh7ja:v0 -rdmn reader_epoch=03.ckpt
+python3 test.py -rtmp [retrieval model path] -rtmn [retrieval model name] -rdmp [reader model path] -rdmn [reader model name]
 ```
 
 ### inference.py
