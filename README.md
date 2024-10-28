@@ -195,3 +195,48 @@
     - BM25의 토크나이저를 PLM의 토크나이저로 바꾸니 다시한번 성능향상
   - Reader
     - CurtisJeon/klue-roberta-large-korquad_v1_qa 사용시 EM 0.66으로 가장 높은 성능을 보임
+
+## 실행 코드
+
+### train_retrieval.py / train_reader.py
+
+```bash
+wandb sweep config_retrieval.yaml  ## retrieval 학습
+wandb sweep config_reader.yaml  ## reader 학습
+wandb agent SWEEP_ID --count 5 ## SWEEP_ID에 위에서 반환된 sweep id   ## --count 뒤에는 반복 실험 진행할 횟수
+```
+
+### context_sparse_embedding.py
+
+```bash
+# -m : model name (AutoModel.frompretrained()에 넣는 model name)
+# -k, -b, -e : bm25 parameter (optional, float)
+python context_sparse_embedding.py -m jhgan/ko-sroberta-multitask
+```
+
+### context_dense_embedding.py
+
+```bash
+# -mp : model path (artifact 상의 model path, 하단 첫 번째 이미지 빨간 밑줄)
+# -mn : model name (artifact 상의 model name, 하단 두 번째 이미지 빨간 밑줄)
+# -b : batch size (optional, int)
+python3 context_dense_embedding.py -mp kangjun205/ODQA_project/model-26umrq2s:v0 -mn retrieval_epoch=00.ckpt
+```
+
+### test.py
+
+```bash
+# -rtmp : retrieval model path (artifact 상의 model path)
+# -rtmn : retrieval model name (artifact 상의 model name)
+# -rdmp : reader model path (artifact 상의 model path)
+# -rdmn : reader model name (artifact 상의 model name)
+# -k : number of selected contexts (optional, int)
+# -w : weight for dense embedding in hybrid model (optional, float, 0~1)
+python3 test.py -rtmp kangjun205/ODQA_project/model-26umrq2s:v0 -rtmn retrieval_epoch=00.ckpt -rdmp kangjun205/ODQA_project/model-4nlzh7ja:v0 -rdmn reader_epoch=03.ckpt
+```
+
+### inference.py
+
+```bash
+python3 inference.py -rtmp rlaworua/ODQA_project/model-jz6xfmzr:v0 -rtmn retrieval_epoch=01.ckpt -rdmp rlaworua/ODQA_project/model-zjiesudw:v0 -rdmn reader_epoch=03.ckpt
+```
